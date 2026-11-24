@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { handle } from "../src/hook.ts";
+import { main } from "../src/view.ts";
 
 function stateDir(): string {
   return process.env.BOB_STATE_DIR ?? join(homedir(), ".local", "state", "bob");
@@ -16,4 +17,23 @@ function runHook(): void {
   }
 }
 
-if (process.argv[2] === "hook") runHook();
+async function runView(once: boolean): Promise<void> {
+  const controller = new AbortController();
+
+  process.once("SIGINT", () => controller.abort());
+
+  await main({
+    stateDir: stateDir(),
+    once,
+    intervalMs: 1000,
+    width: process.stdout.columns || 80,
+    now: () => Math.floor(Date.now() / 1000),
+    write: (text) => process.stdout.write(text),
+    signal: controller.signal,
+  });
+}
+
+const command = process.argv[2];
+
+if (command === "hook") runHook();
+else if (command === undefined || command === "--once") await runView(command === "--once");
