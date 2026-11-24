@@ -24,7 +24,7 @@ Bob only displays. It sends no input to a session. It edits no Claude file unles
 3. Link the command: `ln -s ~/code/bob/bin/bob.ts ~/.local/bin/bob`
 4. Check that `~/.local/bin` is on your PATH: `command -v bob`
 5. Print the hook entries: `bob install`
-6. Merge them into `~/.claude/settings.json`: `bob install --write`. Bob shows the change, asks y/N, and backs up the file first. A second run adds no duplicate.
+6. Merge them into `~/.claude/settings.json`: `bob install --write`. Bob shows the change, asks y/N, and backs up the file first. A second run adds no duplicate. Without a `bob` link on `PATH`, it warns that the hook points into the checkout and breaks if you move or delete it.
 7. Start a new Claude session, then run `bob`.
 
 A session that began before step 6 has no row until you submit a prompt in it.

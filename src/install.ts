@@ -153,6 +153,11 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
   const entry: Json = { hooks: [{ type: "command", command }] };
 
   options.write(JSON.stringify({ hooks: Object.fromEntries(missingEvents.map((event) => [event, [entry]])) }, null, 2) + "\n");
+
+  if (command !== "bob hook") {
+    options.write("warning: no bob link on PATH, so this hook points into the checkout. Moving or deleting the checkout makes every hook exit 1. Link first: ln -s <checkout>/bin/bob.ts ~/.local/bin/bob\n");
+  }
+
   options.write(`Write to ${file}? [y/N] `);
 
   const answer = (await ask(options.input)).trim().toLowerCase();
