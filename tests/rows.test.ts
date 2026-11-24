@@ -1,0 +1,89 @@
+import assert from "node:assert/strict";
+import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { handle } from "../src/hook.ts";
+import { loadRows, STALE_SECONDS } from "../src/rows.ts";
+
+function tempDir(): string {
+  return mkdtempSync(join(tmpdir(), "bob-rows-"));
+}
+
+function send(dir: string, event: string, id: string, now: number, extra = {}): void {
+  handle(dir, JSON.stringify({ hook_event_name: event, session_id: id, cwd: "/w/" + id, ...extra }), now);
+}
+
+test("the stale limit is 3600 seconds", () => {
+  assert.equal(STALE_SECONDS, 3600);
+});
+
+test("waiting rows come first with the longest wait on top, then busy, then idle", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "idle1", 100);
+  send(dir, "UserPromptSubmit", "busy1", 110);
+  send(dir, "Notification", "wait-new", 300, { message: "new" });
+  send(dir, "Notification", "wait-old", 200, { message: "old" });
+  const ids = loadRows(dir, 400).map((row) => row.sessionId);
+  assert.deepEqual(ids, ["wait-old", "wait-new", "busy1", "idle1"]);
+});
+
+test("a row carries status, since, cwd, and reason", () => {
+  const dir = tempDir();
+  send(dir, "Notification", "a", 100, { message: "Allow Bash?" });
+  const [row] = loadRows(dir, 150);
+  assert.equal(row?.sessionId, "a");
+  assert.equal(row?.cwd, "/w/a");
+  assert.equal(row?.status, "waiting");
+  assert.equal(row?.since, 100);
+  assert.equal(row?.updated, 100);
+  assert.equal(row?.reason, "Allow Bash?");
+});
+
+test("an age of the limit minus 1 is fresh and an age of the limit is stale", () => {
+  const dir = tempDir();
+  send(dir, "UserPromptSubmit", "a", 1000);
+  assert.equal(loadRows(dir, 1000 + STALE_SECONDS - 1)[0]?.status, "busy");
+  assert.equal(loadRows(dir, 1000 + STALE_SECONDS)[0]?.status, "stale");
+});
+
+test("a stale row keeps its reason and sorts below idle", () => {
+  const dir = tempDir();
+  send(dir, "Notification", "old", 0, { message: "Allow?" });
+  send(dir, "SessionStart", "idle1", 9000);
+  const rows = loadRows(dir, 9100);
+  assert.deepEqual(
+    rows.map((row) => row.sessionId),
+    ["idle1", "old"],
+  );
+  assert.equal(rows[1]?.status, "stale");
+  assert.equal(rows[1]?.reason, "Allow?");
+});
+
+test("two sessions in one folder give two rows", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, { cwd: "/w/same" });
+  send(dir, "SessionStart", "b", 100, { cwd: "/w/same" });
+  assert.equal(loadRows(dir, 110).length, 2);
+});
+
+test("a missing database gives an empty list and creates nothing", () => {
+  const dir = tempDir();
+  assert.deepEqual(loadRows(dir, 100), []);
+  assert.deepEqual(readdirSync(dir), []);
+  assert.deepEqual(loadRows(join(dir, "nope"), 100), []);
+  assert.equal(existsSync(join(dir, "nope")), false);
+});
+
+test("a corrupt database gives an empty list", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "bob.db"), "this is not a database, not at all, no sir".repeat(50));
+  assert.deepEqual(loadRows(dir, 100), []);
+});
+
+test("an empty database file gives an empty list", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "bob.db"), "");
+  assert.deepEqual(loadRows(dir, 100), []);
+  assert.deepEqual(readdirSync(dir), ["bob.db"]);
+});
