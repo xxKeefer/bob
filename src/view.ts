@@ -23,6 +23,8 @@ const CONTEXT_COLUMN_WIDTH = BAR_CELLS + 5;
 const MODEL_COLUMN_WIDTH = 10;
 const PROJECT_COLUMN_WIDTH = 20;
 const COLUMN_GAP = 2;
+const MIN_REASON_WIDTH = 20;
+const MIN_PROJECT_COLUMN_WIDTH = 8;
 const FULL_BAR_TOKENS = 300000;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
@@ -111,6 +113,24 @@ function shortModel(model: string): string {
   return clean(model).replace(/^claude-/, "").replace(/-\d{8}$/, "").slice(0, MODEL_COLUMN_WIDTH);
 }
 
+interface Layout {
+  modelWidth: number;
+  projectWidth: number;
+}
+
+function layout(width: number): Layout {
+  const fixed = STATUS_COLUMN_WIDTH + AGE_COLUMN_WIDTH + CONTEXT_COLUMN_WIDTH + COLUMN_GAP * 4;
+  const wanted = fixed + COLUMN_GAP + PROJECT_COLUMN_WIDTH + MIN_REASON_WIDTH;
+
+  if (wanted + MODEL_COLUMN_WIDTH + COLUMN_GAP <= width) {
+    return { modelWidth: MODEL_COLUMN_WIDTH, projectWidth: PROJECT_COLUMN_WIDTH };
+  }
+
+  const room = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH;
+
+  return { modelWidth: 0, projectWidth: Math.max(MIN_PROJECT_COLUMN_WIDTH, Math.min(PROJECT_COLUMN_WIDTH, room)) };
+}
+
 export function draw(rows: Row[], now: number, width: number, color = false): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
@@ -118,14 +138,16 @@ export function draw(rows: Row[], now: number, width: number, color = false): st
   const ageStart = STATUS_COLUMN_WIDTH + COLUMN_GAP;
   const ageEnd = ageStart + AGE_COLUMN_WIDTH;
   const contextStart = ageEnd + COLUMN_GAP;
-  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + MODEL_COLUMN_WIDTH + COLUMN_GAP + PROJECT_COLUMN_WIDTH + COLUMN_GAP;
+  const { modelWidth, projectWidth } = layout(width);
+  const modelSpan = modelWidth === 0 ? 0 : modelWidth + COLUMN_GAP;
+  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + modelSpan + projectWidth + COLUMN_GAP;
 
   const heading = join([
     "STATUS".padEnd(STATUS_COLUMN_WIDTH),
     "AGE".padStart(AGE_COLUMN_WIDTH),
     "CONTEXT".padEnd(CONTEXT_COLUMN_WIDTH),
-    "MODEL".padEnd(MODEL_COLUMN_WIDTH),
-    "FOLDER".padEnd(PROJECT_COLUMN_WIDTH),
+    ...(modelWidth === 0 ? [] : ["MODEL".padEnd(modelWidth)]),
+    "FOLDER".padEnd(projectWidth),
     "REASON",
   ]);
 
@@ -137,8 +159,8 @@ export function draw(rows: Row[], now: number, width: number, color = false): st
       `${icon} ${clean(row.status)}`.padEnd(STATUS_COLUMN_WIDTH),
       age(now - row.since).padStart(AGE_COLUMN_WIDTH),
       (cell?.text ?? "").padEnd(CONTEXT_COLUMN_WIDTH),
-      shortModel(row.context?.model ?? "").padEnd(MODEL_COLUMN_WIDTH),
-      clean(basename(row.cwd)).padEnd(PROJECT_COLUMN_WIDTH),
+      ...(modelWidth === 0 ? [] : [shortModel(row.context?.model ?? "").padEnd(modelWidth)]),
+      clean(basename(row.cwd)).slice(0, projectWidth).padEnd(projectWidth),
       clean(row.reason),
     ]);
 

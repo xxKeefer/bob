@@ -30,7 +30,7 @@ test("draw shows one line for each row, in the order given", () => {
 });
 
 test("draw puts a heading line above the rows, aligned with the columns", () => {
-  const [heading, line] = draw([row({ status: "waiting", since: 100, cwd: "/a/api", reason: "Allow?" })], 190, 80);
+  const [heading, line] = draw([row({ status: "waiting", since: 100, cwd: "/a/api", reason: "Allow?" })], 190, 120);
   assert.match(heading ?? "", /^STATUS +AGE +CONTEXT +MODEL +FOLDER +REASON$/);
   assert.equal(heading?.indexOf("FOLDER"), line?.indexOf("api"));
   assert.equal(heading?.indexOf("REASON"), line?.indexOf("Allow?"));
@@ -291,9 +291,9 @@ test("draw turns a run of newline, carriage return and tab in the reason into on
 });
 
 test("draw cuts the cleaned reason to the width", () => {
-  const [, line] = draw([row({ reason: "ab\ncdef" })], 200, 74);
+  const [, line] = draw([row({ reason: `ab\ncdef${"x".repeat(200)}` })], 200, 74);
   assert.equal(line?.length, 74);
-  assert.ok(line?.endsWith("ab c"));
+  assert.ok(line?.includes("ab cdefxxx"));
 });
 
 test("drawUnreadable turns a newline into a space", () => {
@@ -330,4 +330,52 @@ test("isLinked skips empty and relative entries and non-executable bobs", () => 
   const { script, ours, foreign } = pathFixture();
   chmodSync(join(foreign, "bob"), 0o644);
   assert.equal(isLinked(script, ["", "rel/dir", foreign, ours].join(delimiter)), true);
+});
+
+const NARROW_ROWS = [
+  row({ status: "waiting", since: 100, cwd: "/a/my-long-project-name", reason: "Allow Bash to run the migration script?", ...withContext(150000, "claude-opus-5-5") }),
+  row({ status: "busy", cwd: "/a/other", ...withContext(1000) }),
+  row({ status: "idle", cwd: "/a/third" }),
+];
+
+test("draw at 80 columns shows the status, the folder, and the start of the reason", () => {
+  const [heading, waiting] = draw(NARROW_ROWS, 190, 80);
+  assert.ok(waiting !== undefined && waiting.length <= 80);
+  assert.match(waiting, /waiting/);
+  assert.match(waiting, /my-long-project-name/);
+  assert.match(waiting, /Allow Bash to run/);
+  assert.doesNotMatch(heading ?? "", /MODEL/);
+});
+
+test("draw at 120 columns keeps the model column", () => {
+  const [heading, waiting] = draw(NARROW_ROWS, 190, 120);
+  assert.match(heading ?? "", /^STATUS +AGE +CONTEXT +MODEL +FOLDER +REASON$/);
+  assert.match(waiting ?? "", /opus-5-5/);
+  assert.equal(heading?.indexOf("REASON"), 70);
+});
+
+test("draw at 100 columns shows at least 20 characters of the reason", () => {
+  const [, waiting] = draw(NARROW_ROWS, 190, 100);
+  assert.match(waiting ?? "", /Allow Bash to run the m/);
+});
+
+test("draw at 60 columns shrinks the folder and still shows the reason start", () => {
+  const [heading, waiting] = draw(NARROW_ROWS, 190, 60);
+  assert.match(waiting ?? "", /Allow/);
+  assert.doesNotMatch(heading ?? "", /MODEL/);
+});
+
+test("draw aligns the heading with the rows at every width, with and without color", () => {
+  for (const width of [60, 70, 80, 90, 100, 119, 120, 160]) {
+    for (const color of [false, true]) {
+      const [heading, waiting] = draw(NARROW_ROWS, 190, width, color).map((line) => line.replace(SGR, ""));
+      assert.equal(heading?.indexOf("FOLDER"), waiting?.indexOf("my-"), `folder at ${width}`);
+      assert.equal(heading?.indexOf("REASON"), waiting?.indexOf("Allow"), `reason at ${width}`);
+    }
+  }
+});
+
+test("draw at 80 columns paints the reason of a waiting row from its start", () => {
+  const [, waiting] = draw(NARROW_ROWS, 190, 80, true);
+  assert.ok(waiting?.includes(`${ESC}[33mAllow`));
 });
