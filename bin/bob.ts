@@ -4,7 +4,8 @@ import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
 import { demo } from "../src/demo.ts";
 import { handle } from "../src/hook.ts";
-import { install, installHint, isLinked, main } from "../src/view.ts";
+import { writeSettings } from "../src/install.ts";
+import { hookCommand, install, installHint, isLinked, main } from "../src/view.ts";
 
 function stateDir(): string | undefined {
   const override = process.env.BOB_STATE_DIR;
@@ -49,9 +50,20 @@ if (command === "hook") runHook();
 else if (command === "install") {
   const script = join(import.meta.dirname, "..", "bin", "bob.ts");
 
-  process.stdout.write(install(script));
+  if (process.argv[3] === "--write") {
+    process.exitCode = await writeSettings({
+      home: process.env.HOME,
+      command: hookCommand(script),
+      input: process.stdin,
+      write: (text) => process.stdout.write(text),
+      writeError: (text) => process.stderr.write(text),
+      now: () => Date.now(),
+    });
+  } else {
+    process.stdout.write(install(script));
 
-  if (!isLinked(script)) process.stderr.write(installHint(script));
+    if (!isLinked(script)) process.stderr.write(installHint(script));
+  }
 }
 else if (command === "demo") await runView(process.argv[3] === "--once", demo);
 else if (command === undefined || command === "--once") await runView(command === "--once", undefined);

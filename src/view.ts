@@ -113,11 +113,15 @@ export function installHint(script: string): string {
   return `ln -s ${script} ~/.local/bin/bob\n`;
 }
 
+export function hookCommand(script: string, pathEnv = process.env.PATH ?? ""): string {
+  return isLinked(script, pathEnv) ? "bob hook" : `node ${quote(script)} hook`;
+}
+
 export function install(
   script = join(import.meta.dirname, "..", "bin", "bob.ts"),
   pathEnv = process.env.PATH ?? "",
 ): string {
-  const command = isLinked(script, pathEnv) ? "bob hook" : `node ${quote(script)} hook`;
+  const command = hookCommand(script, pathEnv);
   const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command }] }]]));
 
   return JSON.stringify({ hooks }, null, 2) + "\n";
