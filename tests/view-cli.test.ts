@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 
@@ -123,4 +123,51 @@ test("bob --once with an empty BOB_STATE_DIR reads the state folder under HOME",
   assert.equal(result.status, 0);
   assert.match(result.stdout, /alpha/);
   assert.deepEqual(readdirSync(work), []);
+});
+
+function pathWithBob(target: string | undefined): string {
+  const dir = mkdtempSync(join(tmpdir(), "bob-path-"));
+
+  if (target !== undefined) symlinkSync(target, join(dir, "bob"));
+
+  return dir + delimiter + (process.env.PATH ?? "");
+}
+
+function installWith(path: string) {
+  const home = mkdtempSync(join(tmpdir(), "bob-home-"));
+
+  return spawnSync("node", [bin, "install"], { env: { ...process.env, HOME: home, PATH: path }, encoding: "utf8" });
+}
+
+test("bin/bob.ts has the executable bit and runs directly with --once", () => {
+  assert.ok((statSync(bin).mode & 0o111) !== 0);
+  const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = spawnSync(bin, ["--once"], { env: { ...process.env, BOB_STATE_DIR: dir }, encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+});
+
+test("bob install prints bob hook and no hint when bob on the PATH is this script", () => {
+  const result = installWith(pathWithBob(bin));
+  assert.equal(result.status, 0);
+  const parsed: HookConfig = JSON.parse(result.stdout);
+
+  for (const entries of Object.values(parsed.hooks)) assert.equal(entries[0]?.hooks[0]?.command, "bob hook");
+
+  assert.equal(result.stderr, "");
+});
+
+test("bob install keeps the quoted path and hints the link when bob is not on the PATH", () => {
+  const result = installWith(pathWithBob(undefined));
+  const parsed: HookConfig = JSON.parse(result.stdout);
+  assert.equal(parsed.hooks.Stop?.[0]?.hooks[0]?.command, `node '${bin}' hook`);
+  assert.equal(result.stderr, `ln -s ${bin} ~/.local/bin/bob\n`);
+});
+
+test("bob install keeps the quoted path and hints when bob on the PATH is another file", () => {
+  const other = join(mkdtempSync(join(tmpdir(), "bob-other-")), "bob.ts");
+  writeFileSync(other, "");
+  const result = installWith(pathWithBob(other));
+  assert.match(JSON.parse(result.stdout).hooks.Stop[0].hooks[0].command, /^node '/);
+  assert.equal(result.stderr, `ln -s ${bin} ~/.local/bin/bob\n`);
 });

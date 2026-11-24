@@ -1,4 +1,5 @@
-import { basename, join } from "node:path";
+import { realpathSync } from "node:fs";
+import { basename, delimiter, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENTS } from "./hook.ts";
 import { loadRows } from "./rows.ts";
@@ -92,8 +93,31 @@ function quote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
-export function install(script = join(import.meta.dirname, "..", "bin", "bob.ts")): string {
-  const command = `node ${quote(script)} hook`;
+export function isLinked(script: string, pathEnv = process.env.PATH ?? ""): boolean {
+  try {
+    const target = realpathSync(script);
+
+    return pathEnv.split(delimiter).some((dir) => {
+      try {
+        return dir !== "" && realpathSync(join(dir, "bob")) === target;
+      } catch {
+        return false;
+      }
+    });
+  } catch {
+    return false;
+  }
+}
+
+export function installHint(script: string): string {
+  return `ln -s ${script} ~/.local/bin/bob\n`;
+}
+
+export function install(
+  script = join(import.meta.dirname, "..", "bin", "bob.ts"),
+  pathEnv = process.env.PATH ?? "",
+): string {
+  const command = isLinked(script, pathEnv) ? "bob hook" : `node ${quote(script)} hook`;
   const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command }] }]]));
 
   return JSON.stringify({ hooks }, null, 2) + "\n";
