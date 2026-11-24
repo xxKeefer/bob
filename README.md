@@ -1,3 +1,86 @@
 # Bob
 
-A dashboard for Claude sessions. See the spec in `.ai/`.
+A live terminal list of your Claude Code sessions. For each session it shows the status, the time in that status, the context use, the model, the folder, and, for a waiting session, the reason it waits.
+
+```
+STATUS          AGE  CONTEXT        MODEL       FOLDER                REASON
+◆ waiting    23m20s  ████░░░░  50%  sonnet-5-5  api-server            Allow Bash: npm test?
+● busy        1m35s  ███░░░░░  40%  haiku-5-5   docs-site
+○ idle       13m20s  ████████ 113%  opus-5-5    dotfiles
+◌ stale       1h06m  ░░░░░░░░   6%  opus-5-5    old-experiment
+```
+
+Bob only displays. It sends no input to a session. It edits no Claude file unless you run `bob install --write` and say yes.
+
+## Requirements
+
+- Node 26 or later. Bob uses only Node built-ins, so it needs no `npm install` to run.
+- Claude Code with hooks enabled.
+
+## Install from source
+
+1. Clone the repo: `git clone git@github.com:xxKeefer/bob.git ~/code/bob`
+2. Check Node: `node --version`
+3. Link the command: `ln -s ~/code/bob/bin/bob.ts ~/.local/bin/bob`
+4. Check that `~/.local/bin` is on your PATH: `command -v bob`
+5. Print the hook entries: `bob install`
+6. Merge them into `~/.claude/settings.json`: `bob install --write`. Bob shows the change, asks y/N, and backs up the file first. A second run adds no duplicate.
+7. Start a new Claude session, then run `bob`.
+
+A session that began before step 6 has no row until you submit a prompt in it.
+
+If another tool or your employer manages your Claude settings, run step 5 only and add the entries by hand.
+
+To update, run `git pull` in the clone.
+
+## Commands
+
+| Command | Does |
+| --- | --- |
+| `bob` | Show the live list. It refreshes each second. Press Ctrl-C to quit. |
+| `bob --once` | Print one frame and exit. |
+| `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
+| `bob install` | Print the hook entries Bob needs. |
+| `bob install --write` | Merge the entries into `~/.claude/settings.json`. |
+| `bob hook` | The hook that Claude runs. It reads the event on stdin. |
+
+## How to read the list
+
+Rows sort waiting first (longest wait on top), then busy, then idle, then stale.
+
+| Icon | Status | Meaning |
+| --- | --- | --- |
+| `◆` | waiting | Claude waits on you. The reason is the `Notification` message. |
+| `●` | busy | A turn runs. |
+| `○` | idle | The turn ended. |
+| `◌` | stale | No update for 3600 seconds. |
+
+The context bar has 8 cells. 300k tokens fills it, and the percentage is tokens divided by 300k. The colour follows the token count: green below 100k, yellow below 200k, amber below 300k, red above. Bob reads the token count and the model from the last entry of the session transcript.
+
+Colour shows only on a terminal. Set `NO_COLOR` to turn it off.
+
+## Where Bob keeps state
+
+- The hook writes one SQLite file, `~/.local/state/bob/bob.db`, in one transaction. It writes inside no repo.
+- Set `BOB_STATE_DIR` to an absolute path to use another folder.
+- The hook exits 0 on any error, so it never blocks Claude.
+- Bob never deletes a row. A row for a dead session goes stale and sorts last.
+
+## Develop
+
+```sh
+npm install
+npm run dev
+npm run dev -- -d
+npm test
+npm run typecheck
+npm run lint
+```
+
+`npm run dev` restarts Bob when a file in `src` or `bin` changes. Add `-d` to use fake data.
+
+The tests for `bob install` inherit your `PATH`. Three of them fail when `bob` is already linked on it.
+
+## Releases
+
+None yet. The version is `0.0.0`. The next goal is a release page with a binary and an installer, so a machine needs a download and no clone.

@@ -1,0 +1,173 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { delimiter, join } from "node:path";
+import { test } from "node:test";
+import { handle } from "../src/hook.ts";
+
+type HookConfig = { hooks: Record<string, { hooks: { type: string; command: string }[] }[]> };
+
+const bin = join(import.meta.dirname, "..", "bin", "bob.ts");
+
+function bob(dir: string, ...args: string[]) {
+  return spawnSync("node", [bin, ...args], { env: { ...process.env, BOB_STATE_DIR: dir }, encoding: "utf8" });
+}
+
+test("bob --once prints one frame with the sessions and exits 0", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const now = Math.floor(Date.now() / 1000);
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), now);
+  handle(dir, JSON.stringify({ hook_event_name: "Notification", session_id: "a", cwd: "/w/alpha", message: "Allow Bash?" }), now);
+  const result = bob(dir, "--once");
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /waiting/);
+  assert.match(result.stdout, /alpha/);
+  assert.match(result.stdout, /Allow Bash\?/);
+});
+
+test("bob --once leaves the state folder files and bob.db bytes and time unchanged", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), 100);
+  const files = readdirSync(dir).sort();
+  const bytes = readFileSync(join(dir, "bob.db"));
+  const mtime = statSync(join(dir, "bob.db")).mtimeMs;
+  const result = bob(dir, "--once");
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(dir).sort(), files);
+  assert.ok(readFileSync(join(dir, "bob.db")).equals(bytes));
+  assert.equal(statSync(join(dir, "bob.db")).mtimeMs, mtime);
+});
+
+test("bob --once with no database creates nothing and shows the empty line", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = bob(dir, "--once");
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+  assert.deepEqual(readdirSync(dir), []);
+});
+
+test("bob --once with a missing state folder creates nothing", () => {
+  const parent = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const dir = join(parent, "absent");
+  const result = bob(dir, "--once");
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(parent), []);
+});
+
+test("the hook subcommand still works", () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+
+  const result = spawnSync("node", [bin, "hook"], {
+    input: JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w" }),
+    env: { ...process.env, BOB_STATE_DIR: dir },
+    encoding: "utf8",
+  });
+
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(dir), ["bob.db"]);
+});
+
+test("bob install prints JSON with the five events and edits no settings file", () => {
+  const home = mkdtempSync(join(tmpdir(), "bob-home-"));
+  mkdirSync(join(home, ".claude"));
+  const settings = join(home, ".claude", "settings.json");
+  writeFileSync(settings, '{"keep":true}');
+  const before = readFileSync(settings);
+  const mtime = statSync(settings).mtimeMs;
+  const result = spawnSync("node", [bin, "install"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
+  assert.equal(result.status, 0);
+  const parsed: HookConfig = JSON.parse(result.stdout);
+  assert.deepEqual(Object.keys(parsed.hooks).sort(), ["Notification", "SessionEnd", "SessionStart", "Stop", "UserPromptSubmit"]);
+
+  for (const entries of Object.values(parsed.hooks)) {
+    const command = entries[0]?.hooks[0]?.command ?? "";
+    assert.equal(entries[0]?.hooks[0]?.type, "command");
+    assert.ok(command.includes(`'${bin}'`), command);
+    assert.ok(command.endsWith(" hook"), command);
+  }
+
+  assert.ok(readFileSync(settings).equals(before));
+  assert.equal(statSync(settings).mtimeMs, mtime);
+  assert.deepEqual(readdirSync(join(home, ".claude")), ["settings.json"]);
+});
+
+function viewIn(cwd: string, env: Record<string, string>) {
+  const base = { ...process.env, BOB_STATE_DIR: undefined };
+
+  return spawnSync("node", [bin, "--once"], { cwd, env: { ...base, ...env }, encoding: "utf8" });
+}
+
+test("bob --once with an empty HOME and no BOB_STATE_DIR shows the empty line and writes nothing", () => {
+  const work = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = viewIn(work, { HOME: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test("bob --once with an empty HOME and an empty BOB_STATE_DIR shows the empty line and writes nothing", () => {
+  const work = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = viewIn(work, { HOME: "", BOB_STATE_DIR: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test("bob --once with an empty BOB_STATE_DIR reads the state folder under HOME", () => {
+  const work = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const home = mkdtempSync(join(tmpdir(), "bob-home-"));
+  const dir = join(home, ".local", "state", "bob");
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), Math.floor(Date.now() / 1000));
+  const result = viewIn(work, { HOME: home, BOB_STATE_DIR: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /alpha/);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+function pathWithBob(target: string | undefined): string {
+  const dir = mkdtempSync(join(tmpdir(), "bob-path-"));
+
+  if (target !== undefined) symlinkSync(target, join(dir, "bob"));
+
+  return dir + delimiter + (process.env.PATH ?? "");
+}
+
+function installWith(path: string) {
+  const home = mkdtempSync(join(tmpdir(), "bob-home-"));
+
+  return spawnSync("node", [bin, "install"], { env: { ...process.env, HOME: home, PATH: path }, encoding: "utf8" });
+}
+
+test("bin/bob.ts has the executable bit and runs directly with --once", () => {
+  assert.ok((statSync(bin).mode & 0o111) !== 0);
+  const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = spawnSync(bin, ["--once"], { env: { ...process.env, BOB_STATE_DIR: dir }, encoding: "utf8" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+});
+
+test("bob install prints bob hook and no hint when bob on the PATH is this script", () => {
+  const result = installWith(pathWithBob(bin));
+  assert.equal(result.status, 0);
+  const parsed: HookConfig = JSON.parse(result.stdout);
+
+  for (const entries of Object.values(parsed.hooks)) assert.equal(entries[0]?.hooks[0]?.command, "bob hook");
+
+  assert.equal(result.stderr, "");
+});
+
+test("bob install keeps the quoted path and hints the link when bob is not on the PATH", () => {
+  const result = installWith(pathWithBob(undefined));
+  const parsed: HookConfig = JSON.parse(result.stdout);
+  assert.equal(parsed.hooks.Stop?.[0]?.hooks[0]?.command, `node '${bin}' hook`);
+  assert.equal(result.stderr, `ln -s ${bin} ~/.local/bin/bob\n`);
+});
+
+test("bob install keeps the quoted path and hints when bob on the PATH is another file", () => {
+  const other = join(mkdtempSync(join(tmpdir(), "bob-other-")), "bob.ts");
+  writeFileSync(other, "");
+  const result = installWith(pathWithBob(other));
+  assert.match(JSON.parse(result.stdout).hooks.Stop[0].hooks[0].command, /^node '/);
+  assert.equal(result.stderr, `ln -s ${bin} ~/.local/bin/bob\n`);
+});
