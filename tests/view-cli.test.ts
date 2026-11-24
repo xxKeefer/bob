@@ -82,7 +82,7 @@ test("bob install prints JSON with the five events and edits no settings file", 
   for (const entries of Object.values(parsed.hooks)) {
     const command = entries[0]?.hooks[0]?.command ?? "";
     assert.equal(entries[0]?.hooks[0]?.type, "command");
-    assert.ok(command.includes(JSON.stringify(bin)), command);
+    assert.ok(command.includes(`'${bin}'`), command);
     assert.ok(command.endsWith(" hook"), command);
   }
 

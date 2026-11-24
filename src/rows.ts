@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
 export const STALE_SECONDS = 3600;
+const BUSY_TIMEOUT_MS = 200;
 
 export interface Row {
   sessionId: string;
@@ -24,15 +25,19 @@ function rank(status: string): number {
   return RANK.get(status) ?? RANK.size;
 }
 
-export function loadRows(stateDir: string, now: number, onError?: () => void): Row[] {
+export function loadRows(stateDir: string, now: number, onError?: (error: Error) => void): Row[] {
   const file = join(stateDir, "bob.db");
 
   if (!existsSync(file)) return [];
 
   try {
-    const db = new DatabaseSync(file, { readOnly: true });
+    const db = new DatabaseSync(file, { readOnly: true, timeout: BUSY_TIMEOUT_MS });
 
     try {
+      const table = db.prepare("select 1 from sqlite_master where type = 'table' and name = 'sessions'").get();
+
+      if (table === undefined) return [];
+
       const found = db
         .prepare("select session_id, cwd, status, since, updated, reason from sessions")
         .all();
@@ -55,8 +60,8 @@ export function loadRows(stateDir: string, now: number, onError?: () => void): R
     } finally {
       db.close();
     }
-  } catch {
-    onError?.();
+  } catch (error) {
+    onError?.(error instanceof Error ? error : new Error(String(error)));
 
     return [];
   }

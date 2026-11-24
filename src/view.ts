@@ -19,7 +19,7 @@ const AGE_COLUMN_WIDTH = 7;
 const PROJECT_COLUMN_WIDTH = 20;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
-const CONTROL_CHARACTERS = /\p{Cc}/gu;
+const CONTROL_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
 
 function clean(value: string): string {
   return value.replace(CONTROL_CHARACTERS, "");
@@ -41,14 +41,16 @@ function age(seconds: number): string {
   return `${Math.floor(total / SECONDS_PER_HOUR)}h${String(minutes).padStart(2, "0")}m`;
 }
 
-export function draw(rows: Row[], now: number, width: number, unreadable = false): string[] {
-  if (unreadable) return ["db unreadable".slice(0, width)];
+export function drawUnreadable(message: string, width: number): string[] {
+  return [`db unreadable: ${clean(message)}`.slice(0, width)];
+}
 
+export function draw(rows: Row[], now: number, width: number): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
   return rows.map((row) => {
     const parts = [
-      row.status.padEnd(STATUS_COLUMN_WIDTH),
+      clean(row.status).padEnd(STATUS_COLUMN_WIDTH),
       age(now - row.since).padStart(AGE_COLUMN_WIDTH),
       clean(basename(row.cwd)).padEnd(PROJECT_COLUMN_WIDTH),
       clean(row.reason),
@@ -61,13 +63,14 @@ export function draw(rows: Row[], now: number, width: number, unreadable = false
 export async function main(options: MainOptions): Promise<void> {
   while (!options.signal.aborted) {
     const now = options.now();
-    let unreadable = false;
+    const errors: Error[] = [];
+    const rows = loadRows(options.stateDir, now, (error) => errors.push(error));
+    const [failure] = errors;
 
-    const rows = loadRows(options.stateDir, now, () => {
-      unreadable = true;
-    });
-
-    const lines = draw(rows, now, options.width, unreadable);
+    const lines =
+      failure === undefined
+        ? draw(rows, now, options.width)
+        : drawUnreadable(failure.message, options.width);
 
     options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
 
@@ -81,8 +84,12 @@ export async function main(options: MainOptions): Promise<void> {
   }
 }
 
+function quote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 export function install(script = join(import.meta.dirname, "..", "bin", "bob.ts")): string {
-  const command = `node ${JSON.stringify(script)} hook`;
+  const command = `node ${quote(script)} hook`;
   const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command }] }]]));
 
   return JSON.stringify({ hooks }, null, 2) + "\n";

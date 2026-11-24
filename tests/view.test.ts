@@ -4,7 +4,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
-import { draw, install, main } from "../src/view.ts";
+import { spawnSync } from "node:child_process";
+import { draw, drawUnreadable, install, main } from "../src/view.ts";
 import type { Row } from "../src/rows.ts";
 
 function row(extra: Partial<Row>): Row {
@@ -117,13 +118,26 @@ test("draw strips control characters from the reason and folder name", () => {
 
 test("install quotes a script path that holds a space", () => {
   const parsed = JSON.parse(install("/tmp/with space/bin/bob.ts"));
-  assert.equal(parsed.hooks.Stop[0].hooks[0].command, 'node "/tmp/with space/bin/bob.ts" hook');
+  assert.equal(parsed.hooks.Stop[0].hooks[0].command, "node '/tmp/with space/bin/bob.ts' hook");
 });
 
-test("draw shows a db unreadable line when the database is unreadable", () => {
-  const lines = draw([], 0, 80, true);
-  assert.equal(lines.length, 1);
-  assert.match(lines[0] ?? "", /db unreadable/);
+test("install quotes a path with a substitution, a backtick, a space and a single quote", () => {
+  const script = "/tmp/a $(touch pwned) `id` it's/bob.ts";
+  const command: string = JSON.parse(install(script)).hooks.Stop[0].hooks[0].command;
+  assert.equal(command, `node '/tmp/a $(touch pwned) \`id\` it'\\''s/bob.ts' hook`);
+  const out = spawnSync("sh", ["-c", command.replace(/^node /, "printf %s ")], { encoding: "utf8" });
+  assert.equal(out.stdout, script + "hook");
+});
+
+test("draw strips controls from the status and format characters from the reason", () => {
+  const text = draw([row({ status: "bu\x1b[2Jsy", reason: "a\u202Eb" })], 200, 200).join("\n");
+  assert.doesNotMatch(text, /[\p{Cc}\p{Cf}]/u);
+  assert.match(text, /bu\[2Jsy/);
+});
+
+test("drawUnreadable shows the cleaned message cut to the width", () => {
+  assert.deepEqual(drawUnreadable("bad\x1b[2J\u202E file", 80), ["db unreadable: bad[2J file"]);
+  assert.equal(drawUnreadable("x".repeat(300), 40)[0]?.length, 40);
 });
 
 test("main shows db unreadable for a corrupt database and no sessions for a missing one", async () => {
@@ -144,6 +158,6 @@ test("main shows db unreadable for a corrupt database and no sessions for a miss
 
   const bad = mkdtempSync(join(tmpdir(), "bob-view-"));
   writeFileSync(join(bad, "bob.db"), "this is not a database, not at all, no sir".repeat(50));
-  assert.match(await run(bad), /db unreadable/);
+  assert.match(await run(bad), /db unreadable: .+/);
   assert.match(await run(mkdtempSync(join(tmpdir(), "bob-view-"))), /no sessions/);
 });

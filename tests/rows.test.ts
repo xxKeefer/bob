@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 import { loadRows, STALE_SECONDS } from "../src/rows.ts";
@@ -96,4 +97,31 @@ test("a corrupt database calls onError and a missing database does not", () => {
   writeFileSync(join(dir, "bob.db"), "this is not a database, not at all, no sir".repeat(50));
   assert.deepEqual(loadRows(dir, 100, () => errors.push(1)), []);
   assert.equal(errors.length, 1);
+});
+
+test("an empty database file does not call onError", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "bob.db"), "");
+  const errors: Error[] = [];
+  assert.deepEqual(loadRows(dir, 100, (error) => errors.push(error)), []);
+  assert.equal(errors.length, 0);
+});
+
+test("a database with no sessions table does not call onError", () => {
+  const dir = tempDir();
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec("create table other (a)");
+  db.close();
+  const errors: Error[] = [];
+  assert.deepEqual(loadRows(dir, 100, (error) => errors.push(error)), []);
+  assert.equal(errors.length, 0);
+});
+
+test("a corrupt database passes the error to onError", () => {
+  const dir = tempDir();
+  writeFileSync(join(dir, "bob.db"), "this is not a database, not at all, no sir".repeat(50));
+  const errors: Error[] = [];
+  loadRows(dir, 100, (error) => errors.push(error));
+  assert.equal(errors.length, 1);
+  assert.ok(errors[0] instanceof Error);
 });
