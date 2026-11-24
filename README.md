@@ -79,6 +79,8 @@ npm run lint
 
 `npm run dev` restarts Bob when a file in `src` or `bin` changes. Add `-d` to use fake data.
 
+CI runs `npm test`, `npm run typecheck`, and `npm run lint` on every PR and every push to `main`.
+
 ## Releases
 
 None yet. The version is `0.0.0`. The next goal is a release page with a binary and an installer, so a machine needs a download and no clone.
