@@ -1,4 +1,4 @@
-import { basename } from "node:path";
+import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
@@ -12,6 +12,8 @@ export interface MainOptions {
   write: (text: string) => void;
   signal: AbortSignal;
 }
+
+const EVENTS = ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd"];
 
 const CLEAR = "\x1b[H\x1b[2J";
 
@@ -50,4 +52,11 @@ export async function main(options: MainOptions): Promise<void> {
       return;
     }
   }
+}
+
+export function install(): string {
+  const command = `node ${join(import.meta.dirname, "..", "bin", "bob.ts")} hook`;
+  const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command }] }]]));
+
+  return JSON.stringify({ hooks }, null, 2) + "\n";
 }

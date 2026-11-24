@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { handle } from "../src/hook.ts";
-import { main } from "../src/view.ts";
+import { install, main } from "../src/view.ts";
 
 function stateDir(): string {
   return process.env.BOB_STATE_DIR ?? join(homedir(), ".local", "state", "bob");
@@ -36,4 +36,5 @@ async function runView(once: boolean): Promise<void> {
 const command = process.argv[2];
 
 if (command === "hook") runHook();
+else if (command === "install") process.stdout.write(install());
 else if (command === undefined || command === "--once") await runView(command === "--once");
