@@ -11,6 +11,8 @@ const STATUS_BY_EVENT = new Map([
   ["Stop", "idle"],
 ]);
 
+export const EVENTS = [...STATUS_BY_EVENT.keys(), "SessionEnd"];
+
 interface Payload {
   hook_event_name?: string;
   session_id?: string;
@@ -27,14 +29,14 @@ const UPSERT =
   "since = case when sessions.status = excluded.status then sessions.since else excluded.since end, " +
   "status = excluded.status, updated = excluded.updated, reason = excluded.reason";
 
-function text(value: string | undefined): string {
+function toStringOrEmpty(value: string | undefined): string {
   return String(value ?? "");
 }
 
 export function handle(stateDir: string, raw: string, now: number): void {
   const payload: Payload = JSON.parse(raw) ?? {};
-  const event = text(payload.hook_event_name);
-  const id = text(payload.session_id);
+  const event = toStringOrEmpty(payload.hook_event_name);
+  const id = toStringOrEmpty(payload.session_id);
   const status = STATUS_BY_EVENT.get(event);
   const isEnd = event === "SessionEnd";
 
@@ -50,8 +52,8 @@ export function handle(stateDir: string, raw: string, now: number): void {
     if (isEnd) {
       db.prepare("delete from sessions where session_id = ?").run(id);
     } else {
-      const reason = event === "Notification" ? text(payload.message) : "";
-      db.prepare(UPSERT).run(id, text(payload.cwd), status ?? "", now, now, reason);
+      const reason = event === "Notification" ? toStringOrEmpty(payload.message) : "";
+      db.prepare(UPSERT).run(id, toStringOrEmpty(payload.cwd), status ?? "", now, now, reason);
     }
 
     db.exec("commit");

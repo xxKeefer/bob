@@ -6,6 +6,8 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 
+type HookConfig = { hooks: Record<string, { hooks: { type: string; command: string }[] }[]> };
+
 const bin = join(import.meta.dirname, "..", "bin", "bob.ts");
 
 function bob(dir: string, ...args: string[]) {
@@ -74,13 +76,13 @@ test("bob install prints JSON with the five events and edits no settings file", 
   const mtime = statSync(settings).mtimeMs;
   const result = spawnSync("node", [bin, "install"], { env: { ...process.env, HOME: home }, encoding: "utf8" });
   assert.equal(result.status, 0);
-  const parsed = JSON.parse(result.stdout);
+  const parsed: HookConfig = JSON.parse(result.stdout);
   assert.deepEqual(Object.keys(parsed.hooks).sort(), ["Notification", "SessionEnd", "SessionStart", "Stop", "UserPromptSubmit"]);
 
-  for (const entries of Object.values<any>(parsed.hooks)) {
-    const command: string = entries[0].hooks[0].command;
-    assert.equal(entries[0].hooks[0].type, "command");
-    assert.ok(command.includes(bin), command);
+  for (const entries of Object.values(parsed.hooks)) {
+    const command = entries[0]?.hooks[0]?.command ?? "";
+    assert.equal(entries[0]?.hooks[0]?.type, "command");
+    assert.ok(command.includes(JSON.stringify(bin)), command);
     assert.ok(command.endsWith(" hook"), command);
   }
 

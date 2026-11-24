@@ -1,5 +1,6 @@
 import { basename, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
+import { EVENTS } from "./hook.ts";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
 
@@ -13,25 +14,43 @@ export interface MainOptions {
   signal: AbortSignal;
 }
 
-const EVENTS = ["SessionStart", "UserPromptSubmit", "Notification", "Stop", "SessionEnd"];
+const STATUS_COLUMN_WIDTH = 8;
+const AGE_COLUMN_WIDTH = 7;
+const PROJECT_COLUMN_WIDTH = 20;
+const SECONDS_PER_MINUTE = 60;
+const SECONDS_PER_HOUR = 3600;
+const CONTROL_CHARACTERS = /\p{Cc}/gu;
+
+function clean(value: string): string {
+  return value.replace(CONTROL_CHARACTERS, "");
+}
 
 const CLEAR = "\x1b[H\x1b[2J";
 
 function age(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
 
-  if (total < 60) return `${total}s`;
+  if (total < SECONDS_PER_MINUTE) return `${total}s`;
 
-  if (total < 3600) return `${Math.floor(total / 60)}m${String(total % 60).padStart(2, "0")}s`;
+  if (total < SECONDS_PER_HOUR) {
+    return `${Math.floor(total / SECONDS_PER_MINUTE)}m${String(total % SECONDS_PER_MINUTE).padStart(2, "0")}s`;
+  }
 
-  return `${Math.floor(total / 3600)}h${String(Math.floor((total % 3600) / 60)).padStart(2, "0")}m`;
+  const minutes = Math.floor((total % SECONDS_PER_HOUR) / SECONDS_PER_MINUTE);
+
+  return `${Math.floor(total / SECONDS_PER_HOUR)}h${String(minutes).padStart(2, "0")}m`;
 }
 
 export function draw(rows: Row[], now: number, width: number): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
   return rows.map((row) => {
-    const parts = [row.status.padEnd(8), age(now - row.since).padStart(7), basename(row.cwd).padEnd(20), row.reason];
+    const parts = [
+      row.status.padEnd(STATUS_COLUMN_WIDTH),
+      age(now - row.since).padStart(AGE_COLUMN_WIDTH),
+      clean(basename(row.cwd)).padEnd(PROJECT_COLUMN_WIDTH),
+      clean(row.reason),
+    ];
 
     return parts.join("  ").trimEnd().slice(0, width);
   });
@@ -42,7 +61,7 @@ export async function main(options: MainOptions): Promise<void> {
     const now = options.now();
     const lines = draw(loadRows(options.stateDir, now), now, options.width);
 
-    options.write(options.once ? lines.join("\n") + "\n" : CLEAR + lines.join("\n") + "\n");
+    options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
 
     if (options.once) return;
 
@@ -54,8 +73,8 @@ export async function main(options: MainOptions): Promise<void> {
   }
 }
 
-export function install(): string {
-  const command = `node ${join(import.meta.dirname, "..", "bin", "bob.ts")} hook`;
+export function install(script = join(import.meta.dirname, "..", "bin", "bob.ts")): string {
+  const command = `node ${JSON.stringify(script)} hook`;
   const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command }] }]]));
 
   return JSON.stringify({ hooks }, null, 2) + "\n";

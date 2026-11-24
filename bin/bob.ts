@@ -17,14 +17,14 @@ function runHook(): void {
   }
 }
 
-async function runView(once: boolean): Promise<void> {
+async function runView(): Promise<void> {
   const controller = new AbortController();
 
   process.once("SIGINT", () => controller.abort());
 
   await main({
     stateDir: stateDir(),
-    once,
+    once: process.argv[2] === "--once",
     intervalMs: 1000,
     width: process.stdout.columns || 80,
     now: () => Math.floor(Date.now() / 1000),
@@ -37,4 +37,4 @@ const command = process.argv[2];
 
 if (command === "hook") runHook();
 else if (command === "install") process.stdout.write(install());
-else if (command === undefined || command === "--once") await runView(command === "--once");
+else if (command === undefined || command === "--once") await runView();

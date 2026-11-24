@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
-import { draw, main } from "../src/view.ts";
+import { draw, install, main } from "../src/view.ts";
 import type { Row } from "../src/rows.ts";
 
 function row(extra: Partial<Row>): Row {
@@ -107,4 +107,15 @@ test("main stops at once when the signal is already aborted", async () => {
     signal: controller.signal,
   });
   assert.ok(frames.length <= 1);
+});
+
+test("draw strips control characters from the reason and folder name", () => {
+  const text = draw([row({ cwd: "/w/al\x1bpha", reason: "\x1b[2J\x1b]52;c;x\x07done" })], 200, 200).join("\n");
+  assert.doesNotMatch(text, /\p{Cc}/u);
+  assert.match(text, /alpha/);
+});
+
+test("install quotes a script path that holds a space", () => {
+  const parsed = JSON.parse(install("/tmp/with space/bin/bob.ts"));
+  assert.equal(parsed.hooks.Stop[0].hooks[0].command, 'node "/tmp/with space/bin/bob.ts" hook');
 });
