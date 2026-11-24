@@ -24,7 +24,7 @@ function rank(status: string): number {
   return RANK.get(status) ?? RANK.size;
 }
 
-export function loadRows(stateDir: string, now: number): Row[] {
+export function loadRows(stateDir: string, now: number, onError?: () => void): Row[] {
   const file = join(stateDir, "bob.db");
 
   if (!existsSync(file)) return [];
@@ -56,6 +56,8 @@ export function loadRows(stateDir: string, now: number): Row[] {
       db.close();
     }
   } catch {
+    onError?.();
+
     return [];
   }
 }

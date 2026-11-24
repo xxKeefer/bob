@@ -41,7 +41,9 @@ function age(seconds: number): string {
   return `${Math.floor(total / SECONDS_PER_HOUR)}h${String(minutes).padStart(2, "0")}m`;
 }
 
-export function draw(rows: Row[], now: number, width: number): string[] {
+export function draw(rows: Row[], now: number, width: number, unreadable = false): string[] {
+  if (unreadable) return ["db unreadable".slice(0, width)];
+
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
   return rows.map((row) => {
@@ -59,7 +61,13 @@ export function draw(rows: Row[], now: number, width: number): string[] {
 export async function main(options: MainOptions): Promise<void> {
   while (!options.signal.aborted) {
     const now = options.now();
-    const lines = draw(loadRows(options.stateDir, now), now, options.width);
+    let unreadable = false;
+
+    const rows = loadRows(options.stateDir, now, () => {
+      unreadable = true;
+    });
+
+    const lines = draw(rows, now, options.width, unreadable);
 
     options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
 

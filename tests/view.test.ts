@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -118,4 +118,32 @@ test("draw strips control characters from the reason and folder name", () => {
 test("install quotes a script path that holds a space", () => {
   const parsed = JSON.parse(install("/tmp/with space/bin/bob.ts"));
   assert.equal(parsed.hooks.Stop[0].hooks[0].command, 'node "/tmp/with space/bin/bob.ts" hook');
+});
+
+test("draw shows a db unreadable line when the database is unreadable", () => {
+  const lines = draw([], 0, 80, true);
+  assert.equal(lines.length, 1);
+  assert.match(lines[0] ?? "", /db unreadable/);
+});
+
+test("main shows db unreadable for a corrupt database and no sessions for a missing one", async () => {
+  const run = async (dir: string): Promise<string> => {
+    const frames: string[] = [];
+    await main({
+      stateDir: dir,
+      once: true,
+      intervalMs: 5,
+      width: 80,
+      now: () => 200,
+      write: (text) => frames.push(text),
+      signal: new AbortController().signal,
+    });
+
+    return frames.join("");
+  };
+
+  const bad = mkdtempSync(join(tmpdir(), "bob-view-"));
+  writeFileSync(join(bad, "bob.db"), "this is not a database, not at all, no sir".repeat(50));
+  assert.match(await run(bad), /db unreadable/);
+  assert.match(await run(mkdtempSync(join(tmpdir(), "bob-view-"))), /no sessions/);
 });

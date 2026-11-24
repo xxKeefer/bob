@@ -87,3 +87,13 @@ test("an empty database file gives an empty list", () => {
   assert.deepEqual(loadRows(dir, 100), []);
   assert.deepEqual(readdirSync(dir), ["bob.db"]);
 });
+
+test("a corrupt database calls onError and a missing database does not", () => {
+  const dir = tempDir();
+  const errors: number[] = [];
+  loadRows(dir, 100, () => errors.push(1));
+  assert.equal(errors.length, 0);
+  writeFileSync(join(dir, "bob.db"), "this is not a database, not at all, no sir".repeat(50));
+  assert.deepEqual(loadRows(dir, 100, () => errors.push(1)), []);
+  assert.equal(errors.length, 1);
+});
