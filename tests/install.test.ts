@@ -269,6 +269,47 @@ test("a change made to settings.json during the prompt survives the write and is
   assert.equal(readFileSync(join(dir, backup ?? ""), "utf8"), changed);
 });
 
+test("an existing node-form Bob hook counts as installed, gets no second entry, and is named in one note", async () => {
+  const forms = ["node '/home/u/bob/bin/bob.ts' hook", "node /home/u/bob/bin/bob.ts hook"];
+
+  for (const form of forms) {
+    const hooks = Object.fromEntries(EVENTS.map((event) => [event, [{ hooks: [{ type: "command", command: form }] }]]));
+    const text = JSON.stringify({ hooks });
+    const { home, dir, file } = setup(text);
+    const result = await run(home, "y\n");
+    assert.equal(result.status, 0, form);
+    assert.equal(readFileSync(file, "utf8"), text, form);
+    assert.deepEqual(backups(dir), [], form);
+    assert.doesNotMatch(result.out, /\[y\/N\]/, form);
+    const notes = result.out.split("\n").filter((line) => line.includes("another form"));
+    assert.equal(notes.length, 1, form);
+
+    for (const event of EVENTS) assert.match(notes[0] ?? "", new RegExp(event), form);
+  }
+});
+
+test("a node-form hook on one event leaves that event alone and adds bob hook to the rest", async () => {
+  const text = JSON.stringify({ hooks: { Stop: [{ hooks: [{ type: "command", command: "node '/p/bin/bob.ts' hook" }] }] } });
+  const { home, file } = setup(text);
+  const result = await run(home, "y\n");
+  assert.match(result.out, /Stop.*another form/);
+  const merged: Settings = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(merged.hooks?.Stop?.length, 1);
+  assert.equal(merged.hooks?.Stop?.[0]?.hooks[0]?.command, "node '/p/bin/bob.ts' hook");
+  assert.equal(merged.hooks?.SessionEnd?.length, 1);
+});
+
+test("hooks that merely mention bob elsewhere are not matched", async () => {
+  const others = ["echo bob hook", "node /x/other.ts bob hook", "bob hook --extra", "node '/p/bin/bob.ts' hook; rm -rf x", "mybob hook"];
+  const hooks = Object.fromEntries(EVENTS.map((event) => [event, others.map((command) => ({ hooks: [{ type: "command", command }] }))]));
+  const { home, file } = setup(JSON.stringify({ hooks }));
+  const result = await run(home, "y\n");
+  assert.doesNotMatch(result.out, /another form/);
+  const merged: Settings = JSON.parse(readFileSync(file, "utf8"));
+
+  for (const event of EVENTS) assert.equal(merged.hooks?.[event]?.length, others.length + 1, event);
+});
+
 function bob(home: string, input: string, ...args: string[]) {
   return spawnSync("node", [bin, ...args], { env: { ...process.env, HOME: home }, encoding: "utf8", input });
 }

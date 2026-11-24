@@ -33,11 +33,22 @@ function isObject(value: Json | undefined): value is JsonObject {
   return value !== undefined && value !== null && Object.getPrototypeOf(value) === Object.prototype;
 }
 
-function hasCommand(entries: Json[], command: string): boolean {
-  return entries.some(
-    (entry) =>
-      isObject(entry) && Array.isArray(entry.hooks) && entry.hooks.some((hook) => isObject(hook) && hook.command === command),
+const BOB_FORM = /^(?:bob hook|node (?:'(?:[^']|'\\'')*bin\/bob\.ts'|[^\s']*bin\/bob\.ts) hook)$/;
+
+function commandsOf(entries: Json[]): string[] {
+  return entries.flatMap((entry) =>
+    isObject(entry) && Array.isArray(entry.hooks)
+      ? entry.hooks.flatMap((hook) => (isObject(hook) && hook.command !== undefined ? [String(hook.command)] : []))
+      : [],
   );
+}
+
+function hasCommand(entries: Json[], command: string): boolean {
+  return commandsOf(entries).some((existing) => existing === command || (BOB_FORM.test(command) && BOB_FORM.test(existing)));
+}
+
+function hasOtherForm(entries: Json[], command: string): boolean {
+  return !commandsOf(entries).includes(command) && hasCommand(entries, command);
 }
 
 function ask(input: Readable): Promise<string> {
@@ -126,6 +137,12 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
   }
 
   const missingEvents = EVENTS.filter((event) => !hasCommand(entriesOf(first.hooks, event), command));
+
+  const otherForm = EVENTS.filter((event) => hasOtherForm(entriesOf(first.hooks, event), command));
+
+  if (otherForm.length > 0) {
+    options.write(`note: ${otherForm.join(", ")}: a Bob hook in another form exists, left as is\n`);
+  }
 
   if (missingEvents.length === 0) {
     options.write(`already installed in ${file}\n`);
