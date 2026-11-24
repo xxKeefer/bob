@@ -10,6 +10,7 @@
     "node": ">=26"
   },
   "scripts": {
+    "dev": "node --watch --watch-path=src --watch-path=bin bin/bob.ts",
     "test": "node --test",
     "typecheck": "tsc --noEmit",
     "lint": "oxlint"
