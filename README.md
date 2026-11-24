@@ -79,8 +79,6 @@ npm run lint
 
 `npm run dev` restarts Bob when a file in `src` or `bin` changes. Add `-d` to use fake data.
 
-The tests for `bob install` inherit your `PATH`. Three of them fail when `bob` is already linked on it.
-
 ## Releases
 
 None yet. The version is `0.0.0`. The next goal is a release page with a binary and an installer, so a machine needs a download and no clone.
