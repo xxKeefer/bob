@@ -60,17 +60,14 @@ function isMissing(error: Error): boolean {
   return "code" in error && error.code === "ENOENT";
 }
 
-export async function writeSettings(options: WriteOptions): Promise<number> {
-  const fs = options.fs ?? nodeFs;
-  const { home, command } = options;
+interface Loaded {
+  error: string | undefined;
+  settings: JsonObject;
+  hooks: JsonObject;
+  exists: boolean;
+}
 
-  if (home === undefined || home === "" || !isAbsolute(home)) {
-    options.write("not written: HOME is not an absolute path\n");
-
-    return 0;
-  }
-
-  const file = join(home, ".claude", "settings.json");
+function load(fs: FileSystem, file: string): Loaded {
   let settings: JsonObject = {};
   let exists = true;
 
@@ -82,9 +79,9 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
     settings = parsed;
   } catch (error) {
     if (!(error instanceof Error) || !isMissing(error)) {
-      options.writeError(`error: cannot use ${file}: ${error instanceof Error ? error.message : "unreadable"}\n`);
+      const reason = error instanceof Error ? error.message : "unreadable";
 
-      return 1;
+      return { error: `error: cannot use ${file}: ${reason}\n`, settings, hooks: {}, exists };
     }
 
     exists = false;
@@ -92,27 +89,43 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
 
   const hooks = settings.hooks ?? {};
 
-  if (!isObject(hooks)) {
-    options.writeError(`error: ${file}: "hooks" is not an object\n`);
+  if (!isObject(hooks)) return { error: `error: ${file}: "hooks" is not an object\n`, settings, hooks: {}, exists };
+
+  for (const [event, entries] of Object.entries(hooks)) {
+    if (!Array.isArray(entries)) {
+      return { error: `error: ${file}: hooks.${event} is not an array\n`, settings, hooks, exists };
+    }
+  }
+
+  return { error: undefined, settings, hooks, exists };
+}
+
+function entriesOf(hooks: JsonObject, event: string): Json[] {
+  const entries = hooks[event];
+
+  return Array.isArray(entries) ? entries : [];
+}
+
+export async function writeSettings(options: WriteOptions): Promise<number> {
+  const fs = options.fs ?? nodeFs;
+  const { home, command } = options;
+
+  if (home === undefined || home === "" || !isAbsolute(home)) {
+    options.write("not written: HOME is not an absolute path\n");
+
+    return 0;
+  }
+
+  const file = join(home, ".claude", "settings.json");
+  const first = load(fs, file);
+
+  if (first.error !== undefined) {
+    options.writeError(first.error);
 
     return 1;
   }
 
-  for (const [event, entries] of Object.entries(hooks)) {
-    if (!Array.isArray(entries)) {
-      options.writeError(`error: ${file}: hooks.${event} is not an array\n`);
-
-      return 1;
-    }
-  }
-
-  const entriesOf = (event: string): Json[] => {
-    const entries = hooks[event];
-
-    return Array.isArray(entries) ? entries : [];
-  };
-
-  const missingEvents = EVENTS.filter((event) => !hasCommand(entriesOf(event), command));
+  const missingEvents = EVENTS.filter((event) => !hasCommand(entriesOf(first.hooks, event), command));
 
   if (missingEvents.length === 0) {
     options.write(`already installed in ${file}\n`);
@@ -133,9 +146,26 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
     return 0;
   }
 
+  const current = load(fs, file);
+
+  if (current.error !== undefined) {
+    options.writeError(current.error);
+
+    return 1;
+  }
+
+  const { settings, hooks, exists } = current;
+  const stillMissing = EVENTS.filter((event) => !hasCommand(entriesOf(hooks, event), command));
+
+  if (stillMissing.length === 0) {
+    options.write(`already installed in ${file}\n`);
+
+    return 0;
+  }
+
   const merged = { ...hooks };
 
-  for (const event of missingEvents) merged[event] = [...entriesOf(event), entry];
+  for (const event of stillMissing) merged[event] = [...entriesOf(hooks, event), entry];
 
   const next = JSON.stringify({ ...settings, hooks: merged }, null, 2) + "\n";
   const target = exists ? fs.realpathSync(file) : file;

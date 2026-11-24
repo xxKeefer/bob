@@ -32,10 +32,10 @@ function setup(content?: string) {
   return { home, dir, file };
 }
 
-async function run(home: string, answer: string | undefined, fs: FileSystem = realFs) {
+async function run(home: string, answer: string | undefined, fs: FileSystem = realFs, source?: Readable) {
   const out: string[] = [];
   const err: string[] = [];
-  const input = Readable.from(answer === undefined ? [] : [answer]);
+  const input = source ?? Readable.from(answer === undefined ? [] : [answer]);
 
   const status = await writeSettings({
     home,
@@ -246,6 +246,27 @@ test("a new settings.json is 0600 and a new .claude folder is 0700", async () =>
   await run(home, "y\n");
   assert.equal(statSync(file).mode & 0o777, 0o600);
   assert.equal(statSync(dir).mode & 0o777, 0o700);
+});
+
+test("a change made to settings.json during the prompt survives the write and is backed up", async () => {
+  const { home, dir, file } = setup(EXISTING);
+  const changed = JSON.stringify({ ...JSON.parse(EXISTING), model: "opus", hooks: { Stop: [{ hooks: [{ type: "command", command: "late stop" }] }] } });
+
+  async function* typed() {
+    writeFileSync(file, changed);
+    yield "y\n";
+  }
+
+  const result = await run(home, undefined, realFs, Readable.from(typed()));
+  assert.equal(result.status, 0);
+  const merged: Settings & { model?: string } = JSON.parse(readFileSync(file, "utf8"));
+  assert.equal(merged.model, "opus");
+  assert.equal(merged.hooks?.PreToolUse, undefined);
+  assert.equal(merged.hooks?.Stop?.[0]?.hooks[0]?.command, "late stop");
+  assert.equal(merged.hooks?.Stop?.length, 2);
+  assert.equal(merged.hooks?.SessionEnd?.length, 1);
+  const [backup] = backups(dir);
+  assert.equal(readFileSync(join(dir, backup ?? ""), "utf8"), changed);
 });
 
 function bob(home: string, input: string, ...args: string[]) {
