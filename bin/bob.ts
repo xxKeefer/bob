@@ -2,6 +2,7 @@
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
+import { demo } from "../src/demo.ts";
 import { handle } from "../src/hook.ts";
 import { install, installHint, isLinked, main } from "../src/view.ts";
 
@@ -24,20 +25,22 @@ function runHook(): void {
   }
 }
 
-async function runView(): Promise<void> {
+async function runView(once: boolean, run: typeof demo | undefined): Promise<void> {
   const controller = new AbortController();
 
   process.once("SIGINT", () => controller.abort());
 
-  await main({
-    stateDir: stateDir(),
-    once: process.argv[2] === "--once",
+  const options = {
+    once,
     intervalMs: 1000,
     width: process.stdout.columns || 80,
     now: () => Math.floor(Date.now() / 1000),
-    write: (text) => process.stdout.write(text),
+    write: (text: string) => process.stdout.write(text),
     signal: controller.signal,
-  });
+  };
+
+  if (run === undefined) await main({ ...options, stateDir: stateDir() });
+  else await run(options);
 }
 
 const command = process.argv[2];
@@ -50,4 +53,5 @@ else if (command === "install") {
 
   if (!isLinked(script)) process.stderr.write(installHint(script));
 }
-else if (command === undefined || command === "--once") await runView();
+else if (command === "demo") await runView(process.argv[3] === "--once", demo);
+else if (command === undefined || command === "--once") await runView(command === "--once", undefined);
