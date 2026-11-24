@@ -110,3 +110,39 @@ test("two hook processes at once both write and exit 0", async () => {
   assert.equal(count(dir), 5);
   assert.deepEqual(readdirSync(dir), ["bob.db"]);
 });
+
+function runIn(cwd: string, env: Record<string, string>, input: string) {
+  const base = { ...process.env, BOB_STATE_DIR: undefined };
+
+  return spawnSync("node", [bin, "hook"], { cwd, input, env: { ...base, ...env }, encoding: "utf8" });
+}
+
+test("an empty HOME with no BOB_STATE_DIR writes nothing and exits 0", () => {
+  const work = tempDir();
+  const result = runIn(work, { HOME: "" }, payload("SessionStart", "a"));
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test("an empty HOME and an empty BOB_STATE_DIR write nothing and exit 0", () => {
+  const work = tempDir();
+  const result = runIn(work, { HOME: "", BOB_STATE_DIR: "" }, payload("SessionStart", "a"));
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test("an empty BOB_STATE_DIR falls back to the state folder under HOME", () => {
+  const work = tempDir();
+  const home = tempDir();
+  const result = runIn(work, { HOME: home, BOB_STATE_DIR: "" }, payload("SessionStart", "a"));
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(work), []);
+  assert.equal(count(join(home, ".local", "state", "bob")), 1);
+});
+
+test("a relative BOB_STATE_DIR writes nothing and exits 0", () => {
+  const work = tempDir();
+  const result = runIn(work, { HOME: "", BOB_STATE_DIR: "rel" }, payload("SessionStart", "a"));
+  assert.equal(result.status, 0);
+  assert.deepEqual(readdirSync(work), []);
+});

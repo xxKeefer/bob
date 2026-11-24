@@ -5,7 +5,7 @@ import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
 
 export interface MainOptions {
-  stateDir: string;
+  stateDir: string | undefined;
   once: boolean;
   intervalMs: number;
   width: number;
@@ -65,7 +65,10 @@ export async function main(options: MainOptions): Promise<void> {
   while (!options.signal.aborted) {
     const now = options.now();
     const errors: Error[] = [];
-    const rows = loadRows(options.stateDir, now, (error) => errors.push(error));
+
+    const rows =
+      options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error));
+
     const [failure] = errors;
 
     const lines =

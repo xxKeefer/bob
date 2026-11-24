@@ -91,3 +91,36 @@ test("bob install prints JSON with the five events and edits no settings file", 
   assert.equal(statSync(settings).mtimeMs, mtime);
   assert.deepEqual(readdirSync(join(home, ".claude")), ["settings.json"]);
 });
+
+function viewIn(cwd: string, env: Record<string, string>) {
+  const base = { ...process.env, BOB_STATE_DIR: undefined };
+
+  return spawnSync("node", [bin, "--once"], { cwd, env: { ...base, ...env }, encoding: "utf8" });
+}
+
+test("bob --once with an empty HOME and no BOB_STATE_DIR shows the empty line and writes nothing", () => {
+  const work = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = viewIn(work, { HOME: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test("bob --once with an empty HOME and an empty BOB_STATE_DIR shows the empty line and writes nothing", () => {
+  const work = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const result = viewIn(work, { HOME: "", BOB_STATE_DIR: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /no sessions/);
+  assert.deepEqual(readdirSync(work), []);
+});
+
+test("bob --once with an empty BOB_STATE_DIR reads the state folder under HOME", () => {
+  const work = mkdtempSync(join(tmpdir(), "bob-vcli-"));
+  const home = mkdtempSync(join(tmpdir(), "bob-home-"));
+  const dir = join(home, ".local", "state", "bob");
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), Math.floor(Date.now() / 1000));
+  const result = viewIn(work, { HOME: home, BOB_STATE_DIR: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stdout, /alpha/);
+  assert.deepEqual(readdirSync(work), []);
+});
