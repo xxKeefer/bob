@@ -161,3 +161,19 @@ test("main shows db unreadable for a corrupt database and no sessions for a miss
   assert.match(await run(bad), /db unreadable: .+/);
   assert.match(await run(mkdtempSync(join(tmpdir(), "bob-view-"))), /no sessions/);
 });
+
+test("draw turns a run of newline, carriage return and tab in the reason into one space", () => {
+  const text = draw([row({ reason: "needs\nyour\r\n\tpermission" })], 200, 200).join("\n");
+  assert.match(text, /needs your permission$/);
+  assert.doesNotMatch(text, /\p{Cc}/u);
+});
+
+test("draw cuts the cleaned reason to the width", () => {
+  const [line] = draw([row({ reason: "ab\ncd" })], 200, 45);
+  assert.equal(line?.length, 45);
+  assert.ok(line?.endsWith("ab c"));
+});
+
+test("drawUnreadable turns a newline into a space", () => {
+  assert.deepEqual(drawUnreadable("bad\nfile", 80), ["db unreadable: bad file"]);
+});

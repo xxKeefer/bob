@@ -19,10 +19,11 @@ const AGE_COLUMN_WIDTH = 7;
 const PROJECT_COLUMN_WIDTH = 20;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
+const CONTROL_WHITESPACE = /[\n\r\t]+/g;
 const CONTROL_CHARACTERS = /[\p{Cc}\p{Cf}]/gu;
 
 function clean(value: string): string {
-  return value.replace(CONTROL_CHARACTERS, "");
+  return value.replace(CONTROL_WHITESPACE, " ").replace(CONTROL_CHARACTERS, "");
 }
 
 const CLEAR = "\x1b[H\x1b[2J";
