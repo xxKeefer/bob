@@ -35,6 +35,7 @@ async function runView(once: boolean, run: typeof demo | undefined): Promise<voi
     once,
     intervalMs: 1000,
     width: process.stdout.columns || 80,
+    color: process.stdout.isTTY && !process.env.NO_COLOR,
     now: () => Math.floor(Date.now() / 1000),
     write: (text: string) => process.stdout.write(text),
     signal: controller.signal,
@@ -65,5 +66,5 @@ else if (command === "install") {
     if (!isLinked(script)) process.stderr.write(installHint(script));
   }
 }
-else if (command === "demo") await runView(process.argv[3] === "--once", demo);
+else if (command === "demo" || command === "-d") await runView(process.argv[3] === "--once", demo);
 else if (command === undefined || command === "--once") await runView(command === "--once", undefined);

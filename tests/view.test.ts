@@ -36,6 +36,67 @@ test("draw puts a heading line above the rows, aligned with the columns", () => 
   assert.equal(heading?.indexOf("REASON"), line?.indexOf("Allow?"));
 });
 
+const ESC = "\u001b";
+const SGR = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
+
+test("draw with color keeps the text of the plain draw and cuts to the width", () => {
+  const rows = [
+    row({ status: "waiting", cwd: "/a/api", reason: "Allow?" }),
+    row({ status: "busy" }),
+    row({ status: "idle" }),
+    row({ status: "stale", reason: "x".repeat(300) }),
+  ];
+
+  for (const width of [200, 40, 5]) {
+    const plain = draw(rows, 190, width);
+    const colored = draw(rows, 190, width, true);
+    assert.deepEqual(colored.map((line) => line.replace(SGR, "")), plain);
+  }
+});
+
+test("draw with color paints each status in its own color and dims the age", () => {
+  const [heading, waiting, busy, idle, stale] = draw(
+    [row({ status: "waiting", reason: "Allow?" }), row({ status: "busy" }), row({ status: "idle" }), row({ status: "stale" })],
+    190,
+    80,
+    true,
+  );
+
+  assert.ok(heading?.startsWith(`${ESC}[2mSTATUS`));
+  assert.ok(waiting?.startsWith(`${ESC}[1;33mwaiting`));
+  assert.ok(waiting?.includes(`${ESC}[33mAllow?`));
+  assert.ok(busy?.startsWith(`${ESC}[32mbusy`));
+  assert.ok(idle?.startsWith(`${ESC}[36midle`));
+  assert.ok(stale?.startsWith(`${ESC}[2mstale`));
+  assert.ok(busy?.includes(`${ESC}[2m  1m30s${ESC}[0m`));
+});
+
+test("draw without color writes no escape code", () => {
+  assert.ok(!draw([row({ status: "waiting" })], 190, 80).join("\n").includes(ESC));
+});
+
+test("main with color writes colored rows and with no color writes none", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-view-"));
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), 100);
+  const frames: string[] = [];
+
+  for (const color of [true, false]) {
+    await main({
+      stateDir: dir,
+      once: true,
+      intervalMs: 5,
+      width: 80,
+      now: () => 200,
+      color,
+      write: (text) => frames.push(text),
+      signal: new AbortController().signal,
+    });
+  }
+
+  assert.ok(frames[0]?.includes(`${ESC}[36midle`));
+  assert.ok(!frames[1]?.includes(ESC));
+});
+
 test("draw shows an empty-list line when there are no rows", () => {
   const lines = draw([], 0, 80);
   assert.equal(lines.length, 1);

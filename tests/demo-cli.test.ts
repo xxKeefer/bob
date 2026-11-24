@@ -32,6 +32,14 @@ test("bob demo --once prints five fake sessions in each status and removes its t
   assert.deepEqual(readdirSync(home), []);
 });
 
+test("bob -d is the same as bob demo", () => {
+  const { env } = sandbox();
+  const short = spawnSync("node", [bin, "-d", "--once"], { env, encoding: "utf8" });
+  assert.equal(short.status, 0, short.stderr);
+  assert.match(short.stdout, /api-server/);
+  assert.equal(short.stdout.trim().split("\n").length, 6);
+});
+
 test("bob demo on Ctrl-C removes its temp folder and touches neither state nor claude folder", async () => {
   const { home, temp, env } = sandbox();
   const child = spawn("node", [bin, "demo"], { env, stdio: ["ignore", "pipe", "inherit"] });
