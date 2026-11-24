@@ -1,0 +1,23 @@
+{
+  "name": "bob",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "bin": {
+    "bob": "./bin/bob.ts"
+  },
+  "engines": {
+    "node": ">=26"
+  },
+  "scripts": {
+    "test": "node --test",
+    "typecheck": "tsc --noEmit",
+    "lint": "oxlint"
+  },
+  "devDependencies": {
+    "@oxlint/plugins": "1.78.0",
+    "@types/node": "26.2.0",
+    "oxlint": "1.78.0",
+    "typescript": "7.0.2"
+  }
+}
