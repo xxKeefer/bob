@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 import { spawnSync } from "node:child_process";
-import { draw, drawUnreadable, install, main } from "../src/view.ts";
+import { draw, drawUnreadable, install, isLinked, main } from "../src/view.ts";
 import type { Row } from "../src/rows.ts";
 
 function row(extra: Partial<Row>): Row {
@@ -176,4 +176,36 @@ test("draw cuts the cleaned reason to the width", () => {
 
 test("drawUnreadable turns a newline into a space", () => {
   assert.deepEqual(drawUnreadable("bad\nfile", 80), ["db unreadable: bad file"]);
+});
+
+function pathFixture() {
+  const root = mkdtempSync(join(tmpdir(), "bob-linked-"));
+  const script = join(root, "real-bob.ts");
+  writeFileSync(script, "");
+  chmodSync(script, 0o755);
+  const ours = join(root, "ours");
+  const foreign = join(root, "foreign");
+  mkdirSync(ours);
+  mkdirSync(foreign);
+  symlinkSync(script, join(ours, "bob"));
+  writeFileSync(join(foreign, "bob"), "");
+  chmodSync(join(foreign, "bob"), 0o755);
+
+  return { script, ours, foreign };
+}
+
+test("isLinked is false when a foreign bob comes first on the PATH", () => {
+  const { script, ours, foreign } = pathFixture();
+  assert.equal(isLinked(script, [foreign, ours].join(delimiter)), false);
+});
+
+test("isLinked is true when our bob comes first on the PATH", () => {
+  const { script, ours, foreign } = pathFixture();
+  assert.equal(isLinked(script, [ours, foreign].join(delimiter)), true);
+});
+
+test("isLinked skips empty and relative entries and non-executable bobs", () => {
+  const { script, ours, foreign } = pathFixture();
+  chmodSync(join(foreign, "bob"), 0o644);
+  assert.equal(isLinked(script, ["", "rel/dir", foreign, ours].join(delimiter)), true);
 });

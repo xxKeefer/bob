@@ -1,5 +1,5 @@
-import { realpathSync } from "node:fs";
-import { basename, delimiter, join } from "node:path";
+import { accessSync, constants, realpathSync, statSync } from "node:fs";
+import { basename, delimiter, isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENTS } from "./hook.ts";
 import { loadRows } from "./rows.ts";
@@ -93,17 +93,25 @@ function quote(value: string): string {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
+function isExecutableFile(path: string): boolean {
+  try {
+    accessSync(path, constants.X_OK);
+
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}
+
 export function isLinked(script: string, pathEnv = process.env.PATH ?? ""): boolean {
   try {
-    const target = realpathSync(script);
+    const first = pathEnv
+      .split(delimiter)
+      .filter((dir) => dir !== "" && isAbsolute(dir))
+      .map((dir) => join(dir, "bob"))
+      .find(isExecutableFile);
 
-    return pathEnv.split(delimiter).some((dir) => {
-      try {
-        return dir !== "" && realpathSync(join(dir, "bob")) === target;
-      } catch {
-        return false;
-      }
-    });
+    return first !== undefined && realpathSync(first) === realpathSync(script);
   } catch {
     return false;
   }
