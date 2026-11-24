@@ -19,7 +19,8 @@ test("bob demo --once prints five fake sessions in each status and removes its t
   const { home, temp, env } = sandbox();
   const result = spawnSync("node", [bin, "demo", "--once"], { env, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
-  const lines = result.stdout.trim().split("\n");
+  const [heading, ...lines] = result.stdout.trim().split("\n");
+  assert.match(heading ?? "", /^STATUS/);
   assert.equal(lines.length, 5);
   assert.equal(lines.filter((line) => line.startsWith("waiting")).length, 2);
   assert.equal(lines.filter((line) => line.startsWith("busy")).length, 1);

@@ -50,16 +50,21 @@ export function drawUnreadable(message: string, width: number): string[] {
 export function draw(rows: Row[], now: number, width: number): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
-  return rows.map((row) => {
-    const parts = [
-      clean(row.status).padEnd(STATUS_COLUMN_WIDTH),
-      age(now - row.since).padStart(AGE_COLUMN_WIDTH),
-      clean(basename(row.cwd)).padEnd(PROJECT_COLUMN_WIDTH),
-      clean(row.reason),
-    ];
+  const lines = rows.map((row) => [
+    clean(row.status).padEnd(STATUS_COLUMN_WIDTH),
+    age(now - row.since).padStart(AGE_COLUMN_WIDTH),
+    clean(basename(row.cwd)).padEnd(PROJECT_COLUMN_WIDTH),
+    clean(row.reason),
+  ]);
 
-    return parts.join("  ").trimEnd().slice(0, width);
-  });
+  const heading = [
+    "STATUS".padEnd(STATUS_COLUMN_WIDTH),
+    "AGE".padStart(AGE_COLUMN_WIDTH),
+    "FOLDER".padEnd(PROJECT_COLUMN_WIDTH),
+    "REASON",
+  ];
+
+  return [heading, ...lines].map((parts) => parts.join("  ").trimEnd().slice(0, width));
 }
 
 export async function main(options: MainOptions): Promise<void> {

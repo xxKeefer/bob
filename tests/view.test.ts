@@ -29,6 +29,13 @@ test("draw shows one line for each row, in the order given", () => {
   assert.equal(lines.filter((line) => /first|second/.test(line)).length, 2);
 });
 
+test("draw puts a heading line above the rows, aligned with the columns", () => {
+  const [heading, line] = draw([row({ status: "waiting", since: 100, cwd: "/a/api", reason: "Allow?" })], 190, 80);
+  assert.match(heading ?? "", /^STATUS +AGE +FOLDER +REASON$/);
+  assert.equal(heading?.indexOf("FOLDER"), line?.indexOf("api"));
+  assert.equal(heading?.indexOf("REASON"), line?.indexOf("Allow?"));
+});
+
 test("draw shows an empty-list line when there are no rows", () => {
   const lines = draw([], 0, 80);
   assert.equal(lines.length, 1);
@@ -111,7 +118,7 @@ test("main stops at once when the signal is already aborted", async () => {
 });
 
 test("draw strips control characters from the reason and folder name", () => {
-  const text = draw([row({ cwd: "/w/al\x1bpha", reason: "\x1b[2J\x1b]52;c;x\x07done" })], 200, 200).join("\n");
+  const text = draw([row({ cwd: "/w/al\x1bpha", reason: "\x1b[2J\x1b]52;c;x\x07done" })], 200, 200).at(-1) ?? "";
   assert.doesNotMatch(text, /\p{Cc}/u);
   assert.match(text, /alpha/);
 });
@@ -130,7 +137,7 @@ test("install quotes a path with a substitution, a backtick, a space and a singl
 });
 
 test("draw strips controls from the status and format characters from the reason", () => {
-  const text = draw([row({ status: "bu\x1b[2Jsy", reason: "a\u202Eb" })], 200, 200).join("\n");
+  const text = draw([row({ status: "bu\x1b[2Jsy", reason: "a\u202Eb" })], 200, 200).at(-1) ?? "";
   assert.doesNotMatch(text, /[\p{Cc}\p{Cf}]/u);
   assert.match(text, /bu\[2Jsy/);
 });
@@ -163,13 +170,13 @@ test("main shows db unreadable for a corrupt database and no sessions for a miss
 });
 
 test("draw turns a run of newline, carriage return and tab in the reason into one space", () => {
-  const text = draw([row({ reason: "needs\nyour\r\n\tpermission" })], 200, 200).join("\n");
+  const text = draw([row({ reason: "needs\nyour\r\n\tpermission" })], 200, 200).at(-1) ?? "";
   assert.match(text, /needs your permission$/);
   assert.doesNotMatch(text, /\p{Cc}/u);
 });
 
 test("draw cuts the cleaned reason to the width", () => {
-  const [line] = draw([row({ reason: "ab\ncd" })], 200, 45);
+  const [, line] = draw([row({ reason: "ab\ncd" })], 200, 45);
   assert.equal(line?.length, 45);
   assert.ok(line?.endsWith("ab c"));
 });
