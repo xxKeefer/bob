@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import { DatabaseSync } from "node:sqlite";
 import { handle } from "../src/hook.ts";
+import { STALE_SECONDS } from "../src/rows.ts";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "bob-hook-"));
@@ -129,4 +130,29 @@ test("UserPromptSubmit with no row inserts a busy row", () => {
   const dir = tempDir();
   send(dir, "UserPromptSubmit", "a", 100);
   assert.equal(rows(dir)[0]?.status, "busy");
+});
+
+test("since stays when the gap is under the stale limit", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 90);
+  send(dir, "Notification", "a", 100);
+  send(dir, "Notification", "a", 100 + STALE_SECONDS - 1);
+  assert.equal(rows(dir)[0]?.since, 100);
+});
+
+test("since resets when the gap reaches the stale limit with the same status", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 90);
+  send(dir, "Notification", "a", 100);
+  send(dir, "Notification", "a", 100 + STALE_SECONDS);
+  assert.equal(rows(dir)[0]?.since, 100 + STALE_SECONDS);
+});
+
+test("since resets at the stale limit for a repeated UserPromptSubmit too", () => {
+  const dir = tempDir();
+  send(dir, "UserPromptSubmit", "a", 100);
+  send(dir, "UserPromptSubmit", "a", 100 + STALE_SECONDS - 1);
+  assert.equal(rows(dir)[0]?.since, 100);
+  send(dir, "UserPromptSubmit", "a", 100 + STALE_SECONDS - 1 + STALE_SECONDS);
+  assert.equal(rows(dir)[0]?.since, 100 + STALE_SECONDS - 1 + STALE_SECONDS);
 });

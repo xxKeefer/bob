@@ -1,6 +1,7 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { STALE_SECONDS } from "./rows.ts";
 
 const BUSY_TIMEOUT_MS = 200;
 
@@ -28,12 +29,12 @@ const SCHEMA =
 const UPSERT =
   "insert into sessions (session_id, cwd, status, since, updated, reason) values (?, ?, ?, ?, ?, ?) " +
   "on conflict(session_id) do update set cwd = excluded.cwd, " +
-  "since = case when sessions.status = excluded.status then sessions.since else excluded.since end, " +
+  "since = case when sessions.status = excluded.status and excluded.updated - sessions.updated < ? then sessions.since else excluded.since end, " +
   "status = excluded.status, updated = excluded.updated, reason = excluded.reason";
 
 const UPDATE =
   "update sessions set cwd = ?, " +
-  "since = case when status = ? then since else ? end, " +
+  "since = case when status = ? and ? - updated < ? then since else ? end, " +
   "status = ?, updated = ?, reason = ? where session_id = ?";
 
 function toStringOrEmpty(value: string | undefined): string {
@@ -63,9 +64,9 @@ export function handle(stateDir: string, raw: string, now: number): void {
       const cwd = toStringOrEmpty(payload.cwd);
 
       if (INSERTING_EVENTS.has(event)) {
-        db.prepare(UPSERT).run(id, cwd, status ?? "", now, now, reason);
+        db.prepare(UPSERT).run(id, cwd, status ?? "", now, now, reason, STALE_SECONDS);
       } else {
-        db.prepare(UPDATE).run(cwd, status ?? "", now, status ?? "", now, reason, id);
+        db.prepare(UPDATE).run(cwd, status ?? "", now, STALE_SECONDS, now, status ?? "", now, reason, id);
       }
     }
 
