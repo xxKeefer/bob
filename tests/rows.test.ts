@@ -123,5 +123,5 @@ test("a corrupt database passes the error to onError", () => {
   const errors: Error[] = [];
   loadRows(dir, 100, (error) => errors.push(error));
   assert.equal(errors.length, 1);
-  assert.ok(errors[0] instanceof Error);
+  assert.ok(errors[0]?.message.length);
 });
