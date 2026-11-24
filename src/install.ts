@@ -10,11 +10,13 @@ type JsonObject = Record<string, Json>;
 
 export interface FileSystem {
   readFileSync: (path: string, encoding: "utf8") => string;
-  mkdirSync: (path: string, options: { recursive: true }) => void;
+  mkdirSync: (path: string, options: { recursive: true; mode: number }) => void;
   copyFileSync: (from: string, to: string) => void;
   writeFileSync: (path: string, data: string) => void;
   renameSync: (from: string, to: string) => void;
   realpathSync: (path: string) => string;
+  statSync: (path: string) => { mode: number };
+  chmodSync: (path: string, mode: number) => void;
 }
 
 export interface WriteOptions {
@@ -139,13 +141,16 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
   const target = exists ? fs.realpathSync(file) : file;
   const dir = dirname(target);
 
-  fs.mkdirSync(dir, { recursive: true });
+  fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 
   if (exists) fs.copyFileSync(target, `${file}.bak-${options.now()}`);
 
   const temp = join(dir, `.settings.json.tmp-${process.pid}-${options.now()}`);
 
+  const mode = exists ? fs.statSync(target).mode & 0o777 : 0o600;
+
   fs.writeFileSync(temp, next);
+  fs.chmodSync(temp, mode);
   fs.renameSync(temp, target);
   options.write(`written ${file}\n`);
 

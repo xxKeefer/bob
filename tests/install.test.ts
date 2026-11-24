@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import * as realFs from "node:fs";
-import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -225,6 +225,27 @@ test("a symlinked settings.json stays a symlink, the target holds the merge, the
   assert.equal(backups(dir).length, 1);
   assert.equal(readFileSync(join(dir, backup ?? ""), "utf8"), EXISTING);
   assert.deepEqual(readdirSync(store), ["settings.json"]);
+});
+
+test("an existing 0600 settings.json stays 0600", async () => {
+  const { home, file } = setup(EXISTING);
+  chmodSync(file, 0o600);
+  await run(home, "y\n");
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+});
+
+test("an existing 0640 settings.json keeps its mode", async () => {
+  const { home, file } = setup(EXISTING);
+  chmodSync(file, 0o640);
+  await run(home, "y\n");
+  assert.equal(statSync(file).mode & 0o777, 0o640);
+});
+
+test("a new settings.json is 0600 and a new .claude folder is 0700", async () => {
+  const { home, dir, file } = setup();
+  await run(home, "y\n");
+  assert.equal(statSync(file).mode & 0o777, 0o600);
+  assert.equal(statSync(dir).mode & 0o777, 0o700);
 });
 
 function bob(home: string, input: string, ...args: string[]) {
