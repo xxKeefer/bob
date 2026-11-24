@@ -54,6 +54,7 @@ test("Notification sets waiting with the message, and Stop clears the reason", (
 
 test("Notification with no message gives an empty reason", () => {
   const dir = tempDir();
+  send(dir, "SessionStart", "a", 90);
   send(dir, "Notification", "a", 100);
   assert.equal(rows(dir)[0]?.status, "waiting");
   assert.equal(rows(dir)[0]?.reason, "");
@@ -99,4 +100,33 @@ test("one event leaves only bob.db in the state folder", () => {
   send(dir, "Stop", "a", 110);
   send(dir, "SessionEnd", "a", 120);
   assert.deepEqual(readdirSync(dir), ["bob.db"]);
+});
+
+test("Stop after SessionEnd leaves no row", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100);
+  send(dir, "SessionEnd", "a", 110);
+  send(dir, "Stop", "a", 120);
+  assert.equal(rows(dir).length, 0);
+});
+
+test("Notification after SessionEnd leaves no row", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100);
+  send(dir, "SessionEnd", "a", 110);
+  send(dir, "Notification", "a", 120, { message: "late" });
+  assert.equal(rows(dir).length, 0);
+});
+
+test("Notification for a session with no SessionStart leaves no row", () => {
+  const dir = tempDir();
+  send(dir, "Notification", "a", 100, { message: "x" });
+  send(dir, "Stop", "b", 100);
+  assert.equal(rows(dir).length, 0);
+});
+
+test("UserPromptSubmit with no row inserts a busy row", () => {
+  const dir = tempDir();
+  send(dir, "UserPromptSubmit", "a", 100);
+  assert.equal(rows(dir)[0]?.status, "busy");
 });

@@ -17,6 +17,7 @@ function bob(dir: string, ...args: string[]) {
 test("bob --once prints one frame with the sessions and exits 0", () => {
   const dir = mkdtempSync(join(tmpdir(), "bob-vcli-"));
   const now = Math.floor(Date.now() / 1000);
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), now);
   handle(dir, JSON.stringify({ hook_event_name: "Notification", session_id: "a", cwd: "/w/alpha", message: "Allow Bash?" }), now);
   const result = bob(dir, "--once");
   assert.equal(result.status, 0);

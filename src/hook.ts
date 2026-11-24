@@ -11,6 +11,8 @@ const STATUS_BY_EVENT = new Map([
   ["Stop", "idle"],
 ]);
 
+const INSERTING_EVENTS = new Set(["SessionStart", "UserPromptSubmit"]);
+
 export const EVENTS = [...STATUS_BY_EVENT.keys(), "SessionEnd"];
 
 interface Payload {
@@ -28,6 +30,11 @@ const UPSERT =
   "on conflict(session_id) do update set cwd = excluded.cwd, " +
   "since = case when sessions.status = excluded.status then sessions.since else excluded.since end, " +
   "status = excluded.status, updated = excluded.updated, reason = excluded.reason";
+
+const UPDATE =
+  "update sessions set cwd = ?, " +
+  "since = case when status = ? then since else ? end, " +
+  "status = ?, updated = ?, reason = ? where session_id = ?";
 
 function toStringOrEmpty(value: string | undefined): string {
   return String(value ?? "");
@@ -53,7 +60,13 @@ export function handle(stateDir: string, raw: string, now: number): void {
       db.prepare("delete from sessions where session_id = ?").run(id);
     } else {
       const reason = event === "Notification" ? toStringOrEmpty(payload.message) : "";
-      db.prepare(UPSERT).run(id, toStringOrEmpty(payload.cwd), status ?? "", now, now, reason);
+      const cwd = toStringOrEmpty(payload.cwd);
+
+      if (INSERTING_EVENTS.has(event)) {
+        db.prepare(UPSERT).run(id, cwd, status ?? "", now, now, reason);
+      } else {
+        db.prepare(UPDATE).run(cwd, status ?? "", now, status ?? "", now, reason, id);
+      }
     }
 
     db.exec("commit");

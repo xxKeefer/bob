@@ -23,7 +23,9 @@ test("waiting rows come first with the longest wait on top, then busy, then idle
   const dir = tempDir();
   send(dir, "SessionStart", "idle1", 100);
   send(dir, "UserPromptSubmit", "busy1", 110);
+  send(dir, "SessionStart", "wait-new", 300);
   send(dir, "Notification", "wait-new", 300, { message: "new" });
+  send(dir, "SessionStart", "wait-old", 200);
   send(dir, "Notification", "wait-old", 200, { message: "old" });
   const ids = loadRows(dir, 400).map((row) => row.sessionId);
   assert.deepEqual(ids, ["wait-old", "wait-new", "busy1", "idle1"]);
@@ -31,6 +33,7 @@ test("waiting rows come first with the longest wait on top, then busy, then idle
 
 test("a row carries status, since, cwd, and reason", () => {
   const dir = tempDir();
+  send(dir, "SessionStart", "a", 100);
   send(dir, "Notification", "a", 100, { message: "Allow Bash?" });
   const [row] = loadRows(dir, 150);
   assert.equal(row?.sessionId, "a");
@@ -50,6 +53,7 @@ test("an age of the limit minus 1 is fresh and an age of the limit is stale", ()
 
 test("a stale row keeps its reason and sorts below idle", () => {
   const dir = tempDir();
+  send(dir, "SessionStart", "old", 0);
   send(dir, "Notification", "old", 0, { message: "Allow?" });
   send(dir, "SessionStart", "idle1", 9000);
   const rows = loadRows(dir, 9100);
