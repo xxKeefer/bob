@@ -16,9 +16,14 @@ export interface MainOptions {
   signal: AbortSignal;
 }
 
-const STATUS_COLUMN_WIDTH = 8;
+const STATUS_COLUMN_WIDTH = 10;
 const AGE_COLUMN_WIDTH = 7;
+const BAR_CELLS = 8;
+const CONTEXT_COLUMN_WIDTH = BAR_CELLS + 5;
+const MODEL_COLUMN_WIDTH = 10;
 const PROJECT_COLUMN_WIDTH = 20;
+const COLUMN_GAP = 2;
+const FULL_BAR_TOKENS = 300000;
 const SECONDS_PER_MINUTE = 60;
 const SECONDS_PER_HOUR = 3600;
 const CONTROL_WHITESPACE = /[\n\r\t]+/g;
@@ -38,6 +43,20 @@ const STATUS_COLOR = new Map([
   ["idle", "36"],
   ["stale", DIM],
 ]);
+
+const STATUS_ICON = new Map([
+  ["waiting", "\u25c6"],
+  ["busy", "\u25cf"],
+  ["idle", "\u25cb"],
+  ["stale", "\u25cc"],
+]);
+
+const CONTEXT_COLORS = [
+  [100000, "32"],
+  [200000, "33"],
+  [FULL_BAR_TOKENS, "38;5;208"],
+  [Infinity, "31"],
+] as const;
 
 function age(seconds: number): string {
   const total = Math.max(0, Math.floor(seconds));
@@ -73,25 +92,52 @@ function paint(line: string, spans: Span[]): string {
   return out + line.slice(position);
 }
 
+interface ContextCell {
+  text: string;
+  filled: number;
+  code: string;
+}
+
+function contextCell(tokens: number): ContextCell {
+  const percent = Math.floor((tokens * 100) / FULL_BAR_TOKENS);
+  const filled = Math.min(BAR_CELLS, Math.round((percent * BAR_CELLS) / 100));
+  const bar = "\u2588".repeat(filled) + "\u2591".repeat(BAR_CELLS - filled);
+  const code = CONTEXT_COLORS.find(([limit]) => tokens < limit)?.[1] ?? DIM;
+
+  return { text: `${bar} ${`${percent}%`.padStart(4)}`, filled, code };
+}
+
+function shortModel(model: string): string {
+  return clean(model).replace(/^claude-/, "").replace(/-\d{8}$/, "").slice(0, MODEL_COLUMN_WIDTH);
+}
+
 export function draw(rows: Row[], now: number, width: number, color = false): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
-  const join = (parts: string[]) => parts.join("  ").trimEnd().slice(0, width);
-  const ageStart = STATUS_COLUMN_WIDTH + 2;
+  const join = (parts: string[]) => parts.join(" ".repeat(COLUMN_GAP)).trimEnd().slice(0, width);
+  const ageStart = STATUS_COLUMN_WIDTH + COLUMN_GAP;
   const ageEnd = ageStart + AGE_COLUMN_WIDTH;
-  const reasonStart = ageEnd + 2 + PROJECT_COLUMN_WIDTH + 2;
+  const contextStart = ageEnd + COLUMN_GAP;
+  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + MODEL_COLUMN_WIDTH + COLUMN_GAP + PROJECT_COLUMN_WIDTH + COLUMN_GAP;
 
   const heading = join([
     "STATUS".padEnd(STATUS_COLUMN_WIDTH),
     "AGE".padStart(AGE_COLUMN_WIDTH),
+    "CONTEXT".padEnd(CONTEXT_COLUMN_WIDTH),
+    "MODEL".padEnd(MODEL_COLUMN_WIDTH),
     "FOLDER".padEnd(PROJECT_COLUMN_WIDTH),
     "REASON",
   ]);
 
   const lines = rows.map((row) => {
+    const cell = row.context === undefined ? undefined : contextCell(row.context.tokens);
+    const icon = STATUS_ICON.get(row.status) ?? "-";
+
     const line = join([
-      clean(row.status).padEnd(STATUS_COLUMN_WIDTH),
+      `${icon} ${clean(row.status)}`.padEnd(STATUS_COLUMN_WIDTH),
       age(now - row.since).padStart(AGE_COLUMN_WIDTH),
+      (cell?.text ?? "").padEnd(CONTEXT_COLUMN_WIDTH),
+      shortModel(row.context?.model ?? "").padEnd(MODEL_COLUMN_WIDTH),
       clean(basename(row.cwd)).padEnd(PROJECT_COLUMN_WIDTH),
       clean(row.reason),
     ]);
@@ -102,6 +148,16 @@ export function draw(rows: Row[], now: number, width: number, color = false): st
     const spans: Span[] = [[ageStart, ageEnd, DIM]];
 
     if (code !== undefined) spans.unshift([0, STATUS_COLUMN_WIDTH, code]);
+
+    if (cell !== undefined) {
+      const barEnd = contextStart + BAR_CELLS;
+
+      spans.push(
+        [contextStart, contextStart + cell.filled, cell.code],
+        [contextStart + cell.filled, barEnd, DIM],
+        [barEnd + 1, contextStart + CONTEXT_COLUMN_WIDTH, cell.code],
+      );
+    }
 
     if (row.status === "waiting") spans.push([reasonStart, Infinity, REASON_COLOR]);
 

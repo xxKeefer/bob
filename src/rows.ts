@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { readUsage } from "./transcript.ts";
+import type { Usage } from "./transcript.ts";
 
 export const STALE_SECONDS = 3600;
 const BUSY_TIMEOUT_MS = 200;
@@ -12,6 +14,7 @@ export interface Row {
   since: number;
   updated: number;
   reason: string;
+  context: Usage | undefined;
 }
 
 const RANK = new Map([
@@ -38,8 +41,11 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
 
       if (table === undefined) return [];
 
+      const hasTranscript = db.prepare("pragma table_info(sessions)").all().some((column) => column.name === "transcript_path");
+      const transcript = hasTranscript ? "transcript_path" : "'' as transcript_path";
+
       const found = db
-        .prepare("select session_id, cwd, status, since, updated, reason from sessions")
+        .prepare(`select session_id, cwd, status, since, updated, reason, ${transcript} from sessions`)
         .all();
 
       return found
@@ -54,6 +60,7 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
             since: Number(row.since),
             updated,
             reason: String(row.reason),
+            context: readUsage(String(row.transcript_path)),
           };
         })
         .sort((a, b) => rank(a.status) - rank(b.status) || a.since - b.since);

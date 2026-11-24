@@ -23,6 +23,28 @@ function rows(dir: string) {
   return found;
 }
 
+test("every event stores the transcript path and an event with none keeps the stored one", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, { transcript_path: "/t/a.jsonl" });
+  assert.equal(rows(dir)[0]?.transcript_path, "/t/a.jsonl");
+  send(dir, "Stop", "a", 110);
+  assert.equal(rows(dir)[0]?.transcript_path, "/t/a.jsonl");
+  send(dir, "UserPromptSubmit", "a", 120, { transcript_path: "/t/b.jsonl" });
+  assert.equal(rows(dir)[0]?.transcript_path, "/t/b.jsonl");
+});
+
+test("a database from before the transcript column gets the column on the next event", () => {
+  const dir = tempDir();
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec(
+    "create table sessions (session_id text primary key, cwd text not null, status text not null, since integer not null, updated integer not null, reason text not null)",
+  );
+  db.exec("insert into sessions values ('old', '/w/old', 'idle', 1, 1, '')");
+  db.close();
+  send(dir, "Stop", "old", 50, { transcript_path: "/t/old.jsonl" });
+  assert.equal(rows(dir)[0]?.transcript_path, "/t/old.jsonl");
+});
+
 test("SessionStart adds an idle row", () => {
   const dir = tempDir();
   send(dir, "SessionStart", "a", 100);

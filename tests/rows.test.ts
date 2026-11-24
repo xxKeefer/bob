@@ -44,6 +44,33 @@ test("a row carries status, since, cwd, and reason", () => {
   assert.equal(row?.reason, "Allow Bash?");
 });
 
+test("a row carries the tokens and the model from its transcript, and none when it has no transcript", () => {
+  const dir = tempDir();
+  const file = join(dir, "t.jsonl");
+  const usage = { input_tokens: 2, cache_creation_input_tokens: 8, cache_read_input_tokens: 90 };
+  writeFileSync(file, JSON.stringify({ message: { model: "claude-opus-5-5", usage } }) + "\n");
+  send(dir, "SessionStart", "with", 100, { transcript_path: file });
+  send(dir, "SessionStart", "without", 101);
+  const found = loadRows(dir, 150);
+  assert.deepEqual(found.find((row) => row.sessionId === "with")?.context, { tokens: 100, model: "claude-opus-5-5" });
+  assert.equal(found.find((row) => row.sessionId === "without")?.context, undefined);
+});
+
+test("a database from before the transcript column loads with no context and stays unchanged", () => {
+  const dir = tempDir();
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec(
+    "create table sessions (session_id text primary key, cwd text not null, status text not null, since integer not null, updated integer not null, reason text not null)",
+  );
+  db.exec("insert into sessions values ('old', '/w/old', 'idle', 1, 1, '')");
+  db.close();
+  const errors: Error[] = [];
+  const [row] = loadRows(dir, 5, (error) => errors.push(error));
+  assert.equal(row?.sessionId, "old");
+  assert.equal(row?.context, undefined);
+  assert.deepEqual(errors, []);
+});
+
 test("an age of the limit minus 1 is fresh and an age of the limit is stale", () => {
   const dir = tempDir();
   send(dir, "UserPromptSubmit", "a", 1000);

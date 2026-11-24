@@ -34,7 +34,7 @@ async function runView(once: boolean, run: typeof demo | undefined): Promise<voi
   const options = {
     once,
     intervalMs: 1000,
-    width: process.stdout.columns || 80,
+    width: process.stdout.columns || 120,
     color: process.stdout.isTTY && !process.env.NO_COLOR,
     now: () => Math.floor(Date.now() / 1000),
     write: (text: string) => process.stdout.write(text),

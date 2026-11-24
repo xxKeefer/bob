@@ -9,11 +9,11 @@ import { draw, drawUnreadable, install, isLinked, main } from "../src/view.ts";
 import type { Row } from "../src/rows.ts";
 
 function row(extra: Partial<Row>): Row {
-  return { sessionId: "s", cwd: "/home/u/proj", status: "idle", since: 100, updated: 100, reason: "", ...extra };
+  return { sessionId: "s", cwd: "/home/u/proj", status: "idle", since: 100, updated: 100, reason: "", context: undefined, ...extra };
 }
 
 test("draw shows status, age, folder name, and reason", () => {
-  const lines = draw([row({ status: "waiting", since: 100, cwd: "/home/u/api", reason: "Allow Bash?" })], 190, 80);
+  const lines = draw([row({ status: "waiting", since: 100, cwd: "/home/u/api", reason: "Allow Bash?" })], 190, 120);
   const text = lines.join("\n");
   assert.match(text, /waiting/);
   assert.match(text, /1m30s/);
@@ -31,12 +31,17 @@ test("draw shows one line for each row, in the order given", () => {
 
 test("draw puts a heading line above the rows, aligned with the columns", () => {
   const [heading, line] = draw([row({ status: "waiting", since: 100, cwd: "/a/api", reason: "Allow?" })], 190, 80);
-  assert.match(heading ?? "", /^STATUS +AGE +FOLDER +REASON$/);
+  assert.match(heading ?? "", /^STATUS +AGE +CONTEXT +MODEL +FOLDER +REASON$/);
   assert.equal(heading?.indexOf("FOLDER"), line?.indexOf("api"));
   assert.equal(heading?.indexOf("REASON"), line?.indexOf("Allow?"));
 });
 
 const ESC = "\u001b";
+
+function withContext(tokens: number, model = "claude-opus-5-5"): Partial<Row> {
+  return { context: { tokens, model } };
+}
+
 const SGR = new RegExp(`${ESC}\\[[0-9;]*m`, "g");
 
 test("draw with color keeps the text of the plain draw and cuts to the width", () => {
@@ -63,12 +68,61 @@ test("draw with color paints each status in its own color and dims the age", () 
   );
 
   assert.ok(heading?.startsWith(`${ESC}[2mSTATUS`));
-  assert.ok(waiting?.startsWith(`${ESC}[1;33mwaiting`));
+  assert.ok(waiting?.startsWith(`${ESC}[1;33m\u25c6 waiting`));
   assert.ok(waiting?.includes(`${ESC}[33mAllow?`));
-  assert.ok(busy?.startsWith(`${ESC}[32mbusy`));
-  assert.ok(idle?.startsWith(`${ESC}[36midle`));
-  assert.ok(stale?.startsWith(`${ESC}[2mstale`));
+  assert.ok(busy?.startsWith(`${ESC}[32m\u25cf busy`));
+  assert.ok(idle?.startsWith(`${ESC}[36m\u25cb idle`));
+  assert.ok(stale?.startsWith(`${ESC}[2m\u25cc stale`));
   assert.ok(busy?.includes(`${ESC}[2m  1m30s${ESC}[0m`));
+});
+
+test("draw shows an icon before each status", () => {
+  const [, waiting, busy, idle, stale] = draw(
+    [row({ status: "waiting" }), row({ status: "busy" }), row({ status: "idle" }), row({ status: "stale" })],
+    190,
+    80,
+  );
+
+  assert.ok(waiting?.startsWith("\u25c6 waiting"));
+  assert.ok(busy?.startsWith("\u25cf busy"));
+  assert.ok(idle?.startsWith("\u25cb idle"));
+  assert.ok(stale?.startsWith("\u25cc stale"));
+});
+
+test("draw shows the context as a bar and a percent of 300k tokens, and the short model name", () => {
+  const [heading, line] = draw([row(withContext(75000, "claude-sonnet-5-5-20260101"))], 190, 120);
+  assert.match(line ?? "", /\u2588\u2588\u2591{6} +25% +sonnet-5-5 /);
+  assert.equal(heading?.indexOf("CONTEXT"), line?.indexOf("\u2588"));
+  assert.equal(heading?.indexOf("MODEL"), line?.indexOf("sonnet"));
+});
+
+test("draw rounds the bar, fills it at 300k tokens, and keeps counting the percent past 300k", () => {
+  const at = (tokens: number) => draw([row(withContext(tokens))], 190, 120)[1] ?? "";
+  assert.match(at(0), /\u2591{8} +0%/);
+  assert.match(at(140000), /\u2588{4}\u2591{4} +46%/);
+  assert.match(at(300000), /\u2588{8} +100%/);
+  assert.match(at(450000), /\u2588{8} +150%/);
+});
+
+test("draw leaves the context and model cells blank when the row has no context", () => {
+  const [heading, line] = draw([row({ cwd: "/a/api", reason: "r" })], 190, 120);
+  assert.equal(heading?.indexOf("FOLDER"), line?.indexOf("api"));
+  assert.doesNotMatch(line ?? "", /%|\u2588|\u2591/);
+});
+
+test("draw strips controls from the model name", () => {
+  const line = draw([row(withContext(1, "claude-x\u001b[2Jy"))], 190, 120)[1] ?? "";
+  assert.ok(!line.includes(ESC));
+});
+
+test("draw with color paints the bar by tokens and the empty cells dim", () => {
+  const at = (tokens: number) => draw([row(withContext(tokens))], 190, 120, true)[1] ?? "";
+  assert.ok(at(75000).includes(`${ESC}[32m\u2588\u2588${ESC}[0m${ESC}[2m\u2591\u2591\u2591\u2591\u2591\u2591${ESC}[0m`));
+  assert.ok(at(75000).includes(`${ESC}[32m 25%${ESC}[0m`));
+  assert.ok(at(99999).includes(`${ESC}[32m`));
+  assert.ok(at(100000).includes(`${ESC}[33m`));
+  assert.ok(at(200000).includes(`${ESC}[38;5;208m`));
+  assert.ok(at(300000).includes(`${ESC}[31m`));
 });
 
 test("draw without color writes no escape code", () => {
@@ -93,7 +147,7 @@ test("main with color writes colored rows and with no color writes none", async 
     });
   }
 
-  assert.ok(frames[0]?.includes(`${ESC}[36midle`));
+  assert.ok(frames[0]?.includes(`${ESC}[36m\u25cb idle`));
   assert.ok(!frames[1]?.includes(ESC));
 });
 
@@ -237,8 +291,8 @@ test("draw turns a run of newline, carriage return and tab in the reason into on
 });
 
 test("draw cuts the cleaned reason to the width", () => {
-  const [, line] = draw([row({ reason: "ab\ncd" })], 200, 45);
-  assert.equal(line?.length, 45);
+  const [, line] = draw([row({ reason: "ab\ncdef" })], 200, 74);
+  assert.equal(line?.length, 74);
   assert.ok(line?.endsWith("ab c"));
 });
 
