@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import * as realFs from "node:fs";
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Readable } from "node:stream";
@@ -205,6 +205,26 @@ test("the write goes to a temp file in the same folder, then a rename", async ()
   const [rename] = calls.filter((call) => call.startsWith("rename "));
   assert.equal(rename, `rename ${writes[0]?.slice(6)} ${file}`);
   assert.deepEqual(readdirSync(dir).filter((name) => name.includes("tmp")), []);
+});
+
+test("a symlinked settings.json stays a symlink, the target holds the merge, the backup holds the real content", async () => {
+  const { home, dir, file } = setup();
+  const store = join(home, "dotfiles");
+  const real = join(store, "settings.json");
+  mkdirSync(store, { recursive: true });
+  mkdirSync(dir, { recursive: true });
+  writeFileSync(real, EXISTING);
+  symlinkSync(real, file);
+  const result = await run(home, "y\n");
+  assert.equal(result.status, 0);
+  assert.equal(lstatSync(file).isSymbolicLink(), true);
+  const merged: Settings = JSON.parse(readFileSync(real, "utf8"));
+  assert.equal(merged.theme, "dark");
+  assert.equal(merged.hooks?.SessionEnd?.length, 1);
+  const [backup] = backups(dir);
+  assert.equal(backups(dir).length, 1);
+  assert.equal(readFileSync(join(dir, backup ?? ""), "utf8"), EXISTING);
+  assert.deepEqual(readdirSync(store), ["settings.json"]);
 });
 
 function bob(home: string, input: string, ...args: string[]) {

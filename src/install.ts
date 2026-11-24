@@ -14,6 +14,7 @@ export interface FileSystem {
   copyFileSync: (from: string, to: string) => void;
   writeFileSync: (path: string, data: string) => void;
   renameSync: (from: string, to: string) => void;
+  realpathSync: (path: string) => string;
 }
 
 export interface WriteOptions {
@@ -135,16 +136,17 @@ export async function writeSettings(options: WriteOptions): Promise<number> {
   for (const event of missingEvents) merged[event] = [...entriesOf(event), entry];
 
   const next = JSON.stringify({ ...settings, hooks: merged }, null, 2) + "\n";
-  const dir = dirname(file);
+  const target = exists ? fs.realpathSync(file) : file;
+  const dir = dirname(target);
 
   fs.mkdirSync(dir, { recursive: true });
 
-  if (exists) fs.copyFileSync(file, `${file}.bak-${options.now()}`);
+  if (exists) fs.copyFileSync(target, `${file}.bak-${options.now()}`);
 
   const temp = join(dir, `.settings.json.tmp-${process.pid}-${options.now()}`);
 
   fs.writeFileSync(temp, next);
-  fs.renameSync(temp, file);
+  fs.renameSync(temp, target);
   options.write(`written ${file}\n`);
 
   return 0;
