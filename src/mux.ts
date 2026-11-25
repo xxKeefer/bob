@@ -1,10 +1,14 @@
 import { spawnSync } from "node:child_process";
 
-export type RunResult = { ok: true } | { ok: false; reason: string };
+export const Multiplexers = { tmux: "tmux", zellij: "zellij", none: "" } as const;
+
+export type Multiplexer = (typeof Multiplexers)[keyof typeof Multiplexers];
+
+export type RunResult = { ok: true } | { ok: false; message: string };
 
 export type Run = (argv: string[]) => RunResult;
 
-export type FocusResult = { ok: true } | { ok: false; message: string };
+type FocusResult = { ok: true } | { ok: false; message: string };
 
 const TMUX_PANE_ID = /^%\d+$/;
 const ZELLIJ_PANE_ID = /^(terminal_)?\d+$/;
@@ -18,23 +22,23 @@ export const realRun: Run = (argv) => {
   if (result.error !== undefined) {
     const code = "code" in result.error ? result.error.code : undefined;
 
-    return { ok: false, reason: code === "ENOENT" ? `${command} not found` : result.error.message };
+    return { ok: false, message: code === "ENOENT" ? `${command} not found` : result.error.message };
   }
 
   if (result.status === 0) return { ok: true };
 
-  return { ok: false, reason: result.stderr.trim().split("\n")[0] || `${command} exited with ${result.status}` };
+  return { ok: false, message: result.stderr.trim().split("\n")[0] || `${command} exited with ${result.status}` };
 };
 
 function focusTmux(pane: string, run: Run): FocusResult {
   if (!TMUX_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a tmux pane id" };
 
-  const commands = ["select-window", "select-pane", "switch-client"];
+  const verbs = ["select-window", "select-pane", "switch-client"];
 
-  for (const verb of commands) {
+  for (const verb of verbs) {
     const result = run(["tmux", verb, "-t", pane]);
 
-    if (!result.ok) return { ok: false, message: result.reason };
+    if (!result.ok) return result;
   }
 
   return { ok: true };
@@ -47,16 +51,16 @@ function focusZellij(session: string, pane: string, run: Run): FocusResult {
 
   const result = run(["zellij", "--session", session, "action", "focus-pane-id", pane]);
 
-  return result.ok ? { ok: true } : { ok: false, message: result.reason };
+  return result;
 }
 
-export function focus(mux: string, session: string, pane: string, run: Run): FocusResult {
+export function focus(multiplexer: Multiplexer, session: string, pane: string, run: Run): FocusResult {
   if (pane === "") return { ok: false, message: "no pane for this session" };
 
   try {
-    if (mux === "tmux") return focusTmux(pane, run);
+    if (multiplexer === Multiplexers.tmux) return focusTmux(pane, run);
 
-    if (mux === "zellij") return focusZellij(session, pane, run);
+    if (multiplexer === Multiplexers.zellij) return focusZellij(session, pane, run);
 
     return { ok: false, message: "no multiplexer for this session" };
   } catch (error) {

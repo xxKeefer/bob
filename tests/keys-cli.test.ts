@@ -49,7 +49,7 @@ function seeded(): string {
   return dir;
 }
 
-function run(input: FakeInput, once = false) {
+function run(input: FakeInput, once = false, signal: AbortSignal = new AbortController().signal) {
   const frames: string[] = [];
 
   const done = main({
@@ -59,7 +59,7 @@ function run(input: FakeInput, once = false) {
     width: 80,
     now: () => 1000,
     write: (text) => frames.push(text),
-    signal: new AbortController().signal,
+    signal,
     input,
   });
 
@@ -103,25 +103,23 @@ test("--once reads no key and sets no raw mode", async () => {
 test("input that is not a terminal reads no key and sets no raw mode", async () => {
   const input = new FakeInput(false);
   const controller = new AbortController();
-  const frames: string[] = [];
-
-  const done = main({
-    stateDir: seeded(),
-    once: false,
-    intervalMs: 60000,
-    width: 80,
-    now: () => 1000,
-    write: (text) => frames.push(text),
-    signal: controller.signal,
-    input,
-  });
-
+  const { frames, done } = run(input, false, controller.signal);
   assert.equal(input.listenerCount("data"), 0);
   controller.abort();
   await done;
   assert.deepEqual(input.raw, []);
   assert.equal(frames.length, 1);
   assert.ok(!frames[0]?.includes("> "));
+});
+
+test("an outside abort on a terminal restores raw mode and removes the listener", async () => {
+  const input = new FakeInput(true);
+  const controller = new AbortController();
+  const { done } = run(input, false, controller.signal);
+  controller.abort();
+  await done;
+  assert.deepEqual(input.raw, [true, false]);
+  assert.equal(input.listenerCount("data"), 0);
 });
 
 test("bob --once with piped input prints one frame, reads no key, and exits 0", () => {
@@ -160,7 +158,7 @@ function seededPanes(): string {
   return dir;
 }
 
-function jump(dir: string, run: (argv: string[]) => RunResult, keys: string[]) {
+function jump(dir: string, run: (argv: string[]) => RunResult) {
   const input = new FakeInput(true);
   const frames: string[] = [];
 
@@ -176,25 +174,27 @@ function jump(dir: string, run: (argv: string[]) => RunResult, keys: string[]) {
     run,
   });
 
-  return { input, frames, done, keys };
+  return { input, frames, done };
 }
 
 const sleepMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 test("Enter on a row with a pane runs the focus commands and shows no error", async () => {
   const calls: string[][] = [];
-  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), []);
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }));
   input.emit("data", Buffer.from("\r"));
   input.emit("data", Buffer.from("q"));
   await done;
   assert.deepEqual(calls.map((argv) => argv[1]), ["select-window", "select-pane", "switch-client"]);
   assert.deepEqual(calls[0]?.slice(2), ["-t", "%7"]);
-  assert.ok(frames.length > 0);
+  const last = frames.at(-1) ?? "";
+  assert.ok(!last.includes("no pane"));
+  assert.ok(!last.includes("can't find pane"));
 });
 
 test("Enter on a row with no pane shows the message line and runs no command", async () => {
   const calls: string[][] = [];
-  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), []);
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }));
   input.emit("data", Buffer.from("j"));
   input.emit("data", Buffer.from("\r"));
   const last = frames.at(-1)?.split("\n") ?? [];
@@ -205,7 +205,7 @@ test("Enter on a row with no pane shows the message line and runs no command", a
 });
 
 test("a failed jump shows the reason and Bob keeps refreshing", async () => {
-  const { input, frames, done } = jump(seededPanes(), () => ({ ok: false, reason: "can't find pane: %7" }), []);
+  const { input, frames, done } = jump(seededPanes(), () => ({ ok: false, message: "can't find pane: %7" }));
   input.emit("data", Buffer.from("\r"));
   const before = frames.length;
   await sleepMs(60);
@@ -219,7 +219,7 @@ test("a jump keeps refreshing and writes no file", async () => {
   const dir = seededPanes();
   const snapshot = () => readdirSync(dir).map((name) => `${name}:${statSync(join(dir, name)).mtimeMs}:${statSync(join(dir, name)).size}`);
   const before = snapshot();
-  const { input, frames, done } = jump(dir, () => ({ ok: true }), []);
+  const { input, frames, done } = jump(dir, () => ({ ok: true }));
   input.emit("data", Buffer.from("\r"));
   const count = frames.length;
   await sleepMs(60);
@@ -227,4 +227,54 @@ test("a jump keeps refreshing and writes no file", async () => {
   input.emit("data", Buffer.from("q"));
   await done;
   assert.deepEqual(snapshot(), before);
+});
+
+test("a failed jump message goes when the selection moves to another row", async () => {
+  const { input, frames, done } = jump(seededPanes(), () => ({ ok: true }));
+  input.emit("data", Buffer.from("j"));
+  input.emit("data", Buffer.from("\r"));
+  assert.ok(frames.at(-1)?.includes("no pane for this session"));
+  input.emit("data", Buffer.from("k"));
+  const last = frames.at(-1) ?? "";
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.ok(!last.includes("no pane for this session"));
+});
+
+test("a failed jump message goes after a second Enter that succeeds", async () => {
+  let attempts = 0;
+
+  const { input, frames, done } = jump(seededPanes(), () => {
+    attempts += 1;
+
+    return attempts === 1 ? { ok: false, message: "can't find pane: %7" } : { ok: true };
+  });
+
+  input.emit("data", Buffer.from("\r"));
+  assert.ok(frames.at(-1)?.includes("can't find pane: %7"));
+  input.emit("data", Buffer.from("\r"));
+  const last = frames.at(-1) ?? "";
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.ok(!last.includes("can't find pane"));
+});
+
+test("the selection follows its session when a refresh changes the sort order", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-follow-"));
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/a" }), 1000, { TMUX_PANE: "%7" }, () => "s1");
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "b", cwd: "/w/b" }), 1001, { TMUX_PANE: "%8" }, () => "s1");
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(dir, (argv) => (calls.push(argv), { ok: true }));
+  input.emit("data", Buffer.from("j"));
+  handle(dir, JSON.stringify({ hook_event_name: "Notification", session_id: "b", cwd: "/w/b", message: "m" }), 1002);
+  const count = frames.length;
+  await sleepMs(60);
+  assert.ok(frames.length > count);
+  const marked = (frames.at(-1)?.split("\n") ?? []).filter((line) => line.startsWith("> "));
+  assert.equal(marked.length, 1);
+  assert.ok(marked[0]?.includes("waiting"));
+  input.emit("data", Buffer.from("\r"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.equal(calls[0]?.at(-1), "%8");
 });

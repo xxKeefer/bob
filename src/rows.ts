@@ -1,6 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { Multiplexers } from "./mux.ts";
+import type { Multiplexer } from "./mux.ts";
 import { readUsage } from "./transcript.ts";
 import type { Usage } from "./transcript.ts";
 
@@ -15,7 +17,7 @@ export interface Row {
   updated: number;
   reason: string;
   context: Usage | undefined;
-  multiplexer: string;
+  multiplexer: Multiplexer;
   muxSession: string;
   paneId: string;
 }
@@ -26,6 +28,12 @@ const RANK = new Map([
   ["idle", 2],
   ["stale", 3],
 ]);
+
+function toMultiplexer(value: string): Multiplexer {
+  if (value === Multiplexers.tmux || value === Multiplexers.zellij) return value;
+
+  return Multiplexers.none;
+}
 
 function rank(status: string): number {
   return RANK.get(status) ?? RANK.size;
@@ -65,7 +73,7 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
             updated,
             reason: String(row.reason),
             context: readUsage(String(row.transcript_path)),
-            multiplexer: String(row.multiplexer),
+            multiplexer: toMultiplexer(String(row.multiplexer)),
             muxSession: String(row.mux_session),
             paneId: String(row.pane_id),
           };

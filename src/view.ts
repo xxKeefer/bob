@@ -2,7 +2,9 @@ import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENTS } from "./hook.ts";
-import { KEY, parseKeys } from "./keys.ts";
+import { attachKeys, KEY } from "./keys.ts";
+import type { Key } from "./keys.ts";
+import type { KeyInput } from "./keys.ts";
 import { focus, realRun } from "./mux.ts";
 import type { Run } from "./mux.ts";
 import { loadRows } from "./rows.ts";
@@ -10,13 +12,8 @@ import type { Row } from "./rows.ts";
 import { move, reconcile, START } from "./select.ts";
 import type { Selection } from "./select.ts";
 
-export interface Input {
+export interface Input extends KeyInput {
   isTTY?: boolean;
-  setRawMode?: (mode: boolean) => void;
-  resume: () => void;
-  pause: () => void;
-  on: (event: "data", listener: (chunk: Buffer | string) => void) => void;
-  off: (event: "data", listener: (chunk: Buffer | string) => void) => void;
 }
 
 export interface MainOptions {
@@ -227,7 +224,7 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean): stri
 
 export async function main(options: MainOptions): Promise<void> {
   const { input } = options;
-  const keyed = !options.once && input !== undefined && input.isTTY === true && input.setRawMode !== undefined;
+  const readsKeys = !options.once && input !== undefined && input.isTTY === true && input.setRawMode !== undefined;
   const local = new AbortController();
   const abort = () => local.abort();
   let selection: Selection = START;
@@ -239,7 +236,7 @@ export async function main(options: MainOptions): Promise<void> {
   const render = () => {
     const lines =
       failure === undefined
-        ? draw(rows, now, options.width, options.color, keyed && rows.length > 0 ? selection.index : undefined)
+        ? draw(rows, now, options.width, options.color, readsKeys && rows.length > 0 ? selection.index : undefined)
         : drawUnreadable(failure.message, options.width);
 
     if (message !== "") lines.push(clean(message).slice(0, options.width));
@@ -249,8 +246,8 @@ export async function main(options: MainOptions): Promise<void> {
 
   const ids = () => rows.map((row) => row.sessionId);
 
-  const onData = (chunk: Buffer | string) => {
-    for (const key of parseKeys(String(chunk))) {
+  const onKeys = (keys: Key[]) => {
+    for (const key of keys) {
       if (key === KEY.quit) return abort();
 
       if (key === KEY.enter) {
@@ -264,7 +261,11 @@ export async function main(options: MainOptions): Promise<void> {
         continue;
       }
 
-      selection = move(selection, ids(), key === KEY.down ? 1 : -1);
+      const next = move(selection, ids(), key === KEY.down ? 1 : -1);
+
+      if (next.id !== selection.id) message = "";
+
+      selection = next;
     }
 
     render();
@@ -274,11 +275,7 @@ export async function main(options: MainOptions): Promise<void> {
 
   if (options.signal.aborted) abort();
 
-  if (keyed) {
-    input.setRawMode?.(true);
-    input.resume();
-    input.on("data", onData);
-  }
+  const detach = readsKeys ? attachKeys(input, onKeys) : undefined;
 
   try {
     while (!local.signal.aborted) {
@@ -287,7 +284,11 @@ export async function main(options: MainOptions): Promise<void> {
 
       rows = options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error));
       failure = errors[0];
-      selection = reconcile(selection, ids());
+      const reconciled = reconcile(selection, ids());
+
+      if (reconciled.id !== selection.id) message = "";
+
+      selection = reconciled;
       render();
 
       if (options.once) return;
@@ -301,11 +302,7 @@ export async function main(options: MainOptions): Promise<void> {
   } finally {
     options.signal.removeEventListener("abort", abort);
 
-    if (keyed) {
-      input.off("data", onData);
-      input.setRawMode?.(false);
-      input.pause();
-    }
+    detach?.();
   }
 }
 
