@@ -11,8 +11,16 @@ function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "bob-rows-"));
 }
 
-function send(dir: string, event: string, id: string, now: number, extra = {}): void {
-  handle(dir, JSON.stringify({ hook_event_name: event, session_id: id, cwd: "/w/" + id, ...extra }), now);
+function send(
+  dir: string,
+  event: string,
+  id: string,
+  now: number,
+  extra = {},
+  env: Record<string, string> = {},
+  tmuxName = "",
+): void {
+  handle(dir, JSON.stringify({ hook_event_name: event, session_id: id, cwd: "/w/" + id, ...extra }), now, env, () => tmuxName);
 }
 
 test("the stale limit is 3600 seconds", () => {
@@ -155,4 +163,43 @@ test("a corrupt database passes the error to onError", () => {
   loadRows(dir, 100, (error) => errors.push(error));
   assert.equal(errors.length, 1);
   assert.ok(errors[0]?.message.length);
+});
+
+test("a row carries the multiplexer, session, and pane, and an older database gives empty strings", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, {}, { TMUX_PANE: "%3" }, "work");
+  const [row] = loadRows(dir, 150);
+  assert.equal(row?.multiplexer, "tmux");
+  assert.equal(row?.muxSession, "work");
+  assert.equal(row?.paneId, "%3");
+  const old = tempDir();
+  const db = new DatabaseSync(join(old, "bob.db"));
+  db.exec(
+    "create table sessions (session_id text primary key, cwd text not null, status text not null, since integer not null, updated integer not null, reason text not null)",
+  );
+  db.exec("insert into sessions values ('old', '/w/old', 'idle', 1, 1, '')");
+  db.close();
+  const [oldRow] = loadRows(old, 5);
+  assert.equal(oldRow?.multiplexer, "");
+  assert.equal(oldRow?.muxSession, "");
+  assert.equal(oldRow?.paneId, "");
+});
+
+test("a zellij row stores and loads the multiplexer, session, and pane", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, {}, { ZELLIJ_PANE_ID: "4", ZELLIJ_SESSION_NAME: "zs" });
+  const [row] = loadRows(dir, 150);
+  assert.equal(row?.multiplexer, "zellij");
+  assert.equal(row?.muxSession, "zs");
+  assert.equal(row?.paneId, "4");
+});
+
+test("an unknown stored multiplexer loads as empty", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, {}, { TMUX_PANE: "%3" }, "work");
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec("update sessions set multiplexer = 'screen'");
+  db.close();
+  const [row] = loadRows(dir, 150);
+  assert.equal(row?.multiplexer, "");
 });

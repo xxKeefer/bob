@@ -10,7 +10,7 @@ STATUS          AGE  CONTEXT        MODEL       FOLDER                REASON
 ◌ stale       1h06m  ░░░░░░░░   6%  opus-5-5    old-experiment
 ```
 
-Bob only displays. It sends no input to a session. It edits no Claude file unless you run `bob install --write` and say yes.
+Bob sends no input to a session. It edits no Claude file unless you run `bob install --write` and say yes.
 
 ## Requirements
 
@@ -37,8 +37,8 @@ To update, run `git pull` in the clone.
 
 | Command | Does |
 | --- | --- |
-| `bob` | Show the live list. It refreshes each second. Press Ctrl-C to quit. |
-| `bob --once` | Print one frame and exit. |
+| `bob` | Show the live list. It refreshes each second. Move the highlighted row with `j` and `k` or the down and up arrows. Press Enter to focus the selected session's tmux or zellij pane. Press `q` or Ctrl-C to quit. |
+| `bob --once` | Print one frame and exit. It reads no key. |
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
 | `bob install` | Print the hook entries Bob needs. |
 | `bob install --write` | Merge the entries into `~/.claude/settings.json`. |
