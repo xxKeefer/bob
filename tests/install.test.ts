@@ -349,3 +349,30 @@ test("bob install with no --write still edits nothing", () => {
   assert.equal(readFileSync(file, "utf8"), EXISTING);
   assert.deepEqual(readdirSync(dir), ["settings.json"]);
 });
+
+test("warns before the prompt when the command is a path form", async () => {
+  const { home } = setup();
+  const out: string[] = [];
+  const err: string[] = [];
+
+  await writeSettings({
+    home,
+    command: "node '/tmp/checkout/bin/bob.ts' hook",
+    input: Readable.from(["n\n"]),
+    write: (text) => out.push(text),
+    writeError: (text) => err.push(text),
+    now: () => 1700000000123,
+  });
+
+  const all = out.join("");
+
+  assert.match(all, /warning: .*bob.* PATH/);
+  assert.ok(all.indexOf("warning:") < all.indexOf("[y/N]"));
+});
+
+test("does not warn for the linked form", async () => {
+  const { home } = setup();
+  const result = await run(home, "n\n");
+
+  assert.doesNotMatch(result.out, /warning:/);
+});

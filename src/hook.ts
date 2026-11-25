@@ -58,6 +58,7 @@ export function handle(stateDir: string, raw: string, now: number): void {
   const db = new DatabaseSync(join(stateDir, "bob.db"), { timeout: BUSY_TIMEOUT_MS });
 
   try {
+    db.exec("pragma synchronous = off");
     db.exec("begin immediate");
     db.exec(SCHEMA);
 
