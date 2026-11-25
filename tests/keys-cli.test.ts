@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 import { main } from "../src/view.ts";
+import type { RunResult } from "../src/mux.ts";
 import type { Input } from "../src/view.ts";
 
 const bin = join(import.meta.dirname, "..", "bin", "bob.ts");
@@ -148,4 +149,82 @@ test("bob with piped input ignores q and keeps running", () => {
 
   assert.equal(result.signal, "SIGTERM");
   assert.match(result.stdout, /STATUS/);
+});
+
+function seededPanes(): string {
+  const dir = mkdtempSync(join(tmpdir(), "bob-jump-"));
+  const env = { TMUX_PANE: "%7" };
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/a" }), 1000, env, () => "s1");
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "b", cwd: "/w/b" }), 1001);
+
+  return dir;
+}
+
+function jump(dir: string, run: (argv: string[]) => RunResult, keys: string[]) {
+  const input = new FakeInput(true);
+  const frames: string[] = [];
+
+  const done = main({
+    stateDir: dir,
+    once: false,
+    intervalMs: 5,
+    width: 80,
+    now: () => 1000,
+    write: (text) => frames.push(text),
+    signal: new AbortController().signal,
+    input,
+    run,
+  });
+
+  return { input, frames, done, keys };
+}
+
+const sleepMs = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+test("Enter on a row with a pane runs the focus commands and shows no error", async () => {
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), []);
+  input.emit("data", Buffer.from("\r"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls.map((argv) => argv[1]), ["select-window", "select-pane", "switch-client"]);
+  assert.deepEqual(calls[0]?.slice(2), ["-t", "%7"]);
+  assert.ok(frames.length > 0);
+});
+
+test("Enter on a row with no pane shows the message line and runs no command", async () => {
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), []);
+  input.emit("data", Buffer.from("j"));
+  input.emit("data", Buffer.from("\r"));
+  const last = frames.at(-1)?.split("\n") ?? [];
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+  assert.ok(last.some((line) => line.includes("no pane for this session")));
+});
+
+test("a failed jump shows the reason and Bob keeps refreshing", async () => {
+  const { input, frames, done } = jump(seededPanes(), () => ({ ok: false, reason: "can't find pane: %7" }), []);
+  input.emit("data", Buffer.from("\r"));
+  const before = frames.length;
+  await sleepMs(60);
+  assert.ok(frames.length > before);
+  assert.ok(frames.at(-1)?.includes("can't find pane: %7"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+});
+
+test("a jump keeps refreshing and writes no file", async () => {
+  const dir = seededPanes();
+  const snapshot = () => readdirSync(dir).map((name) => `${name}:${statSync(join(dir, name)).mtimeMs}:${statSync(join(dir, name)).size}`);
+  const before = snapshot();
+  const { input, frames, done } = jump(dir, () => ({ ok: true }), []);
+  input.emit("data", Buffer.from("\r"));
+  const count = frames.length;
+  await sleepMs(60);
+  assert.ok(frames.length > count);
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(snapshot(), before);
 });

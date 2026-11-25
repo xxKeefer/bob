@@ -15,6 +15,9 @@ export interface Row {
   updated: number;
   reason: string;
   context: Usage | undefined;
+  multiplexer: string;
+  muxSession: string;
+  paneId: string;
 }
 
 const RANK = new Map([
@@ -41,11 +44,12 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
 
       if (table === undefined) return [];
 
-      const hasTranscript = db.prepare("pragma table_info(sessions)").all().some((column) => column.name === "transcript_path");
-      const transcript = hasTranscript ? "transcript_path" : "'' as transcript_path";
+      const present = new Set(db.prepare("pragma table_info(sessions)").all().map((column) => String(column.name)));
+      const optional = (name: string) => (present.has(name) ? name : `'' as ${name}`);
+      const optionals = ["transcript_path", "multiplexer", "mux_session", "pane_id"].map(optional).join(", ");
 
       const found = db
-        .prepare(`select session_id, cwd, status, since, updated, reason, ${transcript} from sessions`)
+        .prepare(`select session_id, cwd, status, since, updated, reason, ${optionals} from sessions`)
         .all();
 
       return found
@@ -61,6 +65,9 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
             updated,
             reason: String(row.reason),
             context: readUsage(String(row.transcript_path)),
+            multiplexer: String(row.multiplexer),
+            muxSession: String(row.mux_session),
+            paneId: String(row.pane_id),
           };
         })
         .sort((a, b) => rank(a.status) - rank(b.status) || a.since - b.since);

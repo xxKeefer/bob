@@ -1,4 +1,4 @@
-export const KEY = { up: "up", down: "down", quit: "quit" } as const;
+export const KEY = { up: "up", down: "down", quit: "quit", enter: "enter" } as const;
 
 export type Key = (typeof KEY)[keyof typeof KEY];
 
@@ -9,6 +9,8 @@ const SEQUENCES: [string, Key][] = [
   ["\x1bOB", KEY.down],
   ["j", KEY.down],
   ["k", KEY.up],
+  ["\r", KEY.enter],
+  ["\n", KEY.enter],
   ["q", KEY.quit],
   ["\x03", KEY.quit],
 ];

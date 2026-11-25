@@ -9,7 +9,7 @@ import { draw, drawUnreadable, install, isLinked, main } from "../src/view.ts";
 import type { Row } from "../src/rows.ts";
 
 function row(extra: Partial<Row>): Row {
-  return { sessionId: "s", cwd: "/home/u/proj", status: "idle", since: 100, updated: 100, reason: "", context: undefined, ...extra };
+  return { sessionId: "s", cwd: "/home/u/proj", status: "idle", since: 100, updated: 100, reason: "", context: undefined, multiplexer: "", muxSession: "", paneId: "", ...extra };
 }
 
 test("draw shows status, age, folder name, and reason", () => {

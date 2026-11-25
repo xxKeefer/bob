@@ -3,6 +3,8 @@ import { basename, delimiter, isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENTS } from "./hook.ts";
 import { KEY, parseKeys } from "./keys.ts";
+import { focus, realRun } from "./mux.ts";
+import type { Run } from "./mux.ts";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
 import { move, reconcile, START } from "./select.ts";
@@ -27,6 +29,7 @@ export interface MainOptions {
   write: (text: string) => void;
   signal: AbortSignal;
   input?: Input;
+  run?: Run;
 }
 
 const STATUS_COLUMN_WIDTH = 10;
@@ -231,12 +234,15 @@ export async function main(options: MainOptions): Promise<void> {
   let rows: Row[] = [];
   let failure: Error | undefined;
   let now = options.now();
+  let message = "";
 
   const render = () => {
     const lines =
       failure === undefined
         ? draw(rows, now, options.width, options.color, keyed && rows.length > 0 ? selection.index : undefined)
         : drawUnreadable(failure.message, options.width);
+
+    if (message !== "") lines.push(clean(message).slice(0, options.width));
 
     options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
   };
@@ -246,6 +252,17 @@ export async function main(options: MainOptions): Promise<void> {
   const onData = (chunk: Buffer | string) => {
     for (const key of parseKeys(String(chunk))) {
       if (key === KEY.quit) return abort();
+
+      if (key === KEY.enter) {
+        const row = rows.find((candidate) => candidate.sessionId === selection.id);
+
+        if (row === undefined) continue;
+
+        const result = focus(row.multiplexer, row.muxSession, row.paneId, options.run ?? realRun);
+
+        message = result.ok ? "" : result.message;
+        continue;
+      }
 
       selection = move(selection, ids(), key === KEY.down ? 1 : -1);
     }
