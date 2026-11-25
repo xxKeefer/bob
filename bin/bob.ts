@@ -51,6 +51,7 @@ async function runView(once: boolean, run: typeof demo | undefined): Promise<voi
     now: () => Math.floor(Date.now() / 1000),
     write: (text: string) => process.stdout.write(text),
     signal: controller.signal,
+    input: process.stdin,
   };
 
   if (run === undefined) await main({ ...options, stateDir: stateDir() });

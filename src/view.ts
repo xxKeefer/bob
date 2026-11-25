@@ -2,8 +2,20 @@ import { accessSync, constants, realpathSync, statSync } from "node:fs";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENTS } from "./hook.ts";
+import { KEY, parseKeys } from "./keys.ts";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
+import { move, reconcile, START } from "./select.ts";
+import type { Selection } from "./select.ts";
+
+export interface Input {
+  isTTY?: boolean;
+  setRawMode?: (mode: boolean) => void;
+  resume: () => void;
+  pause: () => void;
+  on: (event: "data", listener: (chunk: Buffer | string) => void) => void;
+  off: (event: "data", listener: (chunk: Buffer | string) => void) => void;
+}
 
 export interface MainOptions {
   stateDir: string | undefined;
@@ -14,6 +26,7 @@ export interface MainOptions {
   now: () => number;
   write: (text: string) => void;
   signal: AbortSignal;
+  input?: Input;
 }
 
 const STATUS_COLUMN_WIDTH = 10;
@@ -131,7 +144,27 @@ function layout(width: number): Layout {
   return { modelWidth: 0, projectWidth: Math.max(MIN_PROJECT_COLUMN_WIDTH, Math.min(PROJECT_COLUMN_WIDTH, room)) };
 }
 
-export function draw(rows: Row[], now: number, width: number, color = false): string[] {
+const GUTTER = "  ";
+const MARKER = "> ";
+const REVERSE = "\x1b[7m";
+const RESET = "\x1b[0m";
+
+export function draw(rows: Row[], now: number, width: number, color = false, selected?: number): string[] {
+  if (selected === undefined || rows.length === 0) return drawRows(rows, now, width, color);
+
+  const [heading = "", ...lines] = drawRows(rows, now, width - GUTTER.length, color);
+
+  return [
+    GUTTER + heading,
+    ...lines.map((line, index) => {
+      if (index !== selected) return GUTTER + line;
+
+      return color ? MARKER + REVERSE + line.replaceAll(RESET, RESET + REVERSE) + RESET : MARKER + line;
+    }),
+  ];
+}
+
+function drawRows(rows: Row[], now: number, width: number, color: boolean): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
   const join = (parts: string[]) => parts.join(" ".repeat(COLUMN_GAP)).trimEnd().slice(0, width);
@@ -190,28 +223,71 @@ export function draw(rows: Row[], now: number, width: number, color = false): st
 }
 
 export async function main(options: MainOptions): Promise<void> {
-  while (!options.signal.aborted) {
-    const now = options.now();
-    const errors: Error[] = [];
+  const { input } = options;
+  const keyed = !options.once && input !== undefined && input.isTTY === true && input.setRawMode !== undefined;
+  const local = new AbortController();
+  const abort = () => local.abort();
+  let selection: Selection = START;
+  let rows: Row[] = [];
+  let failure: Error | undefined;
+  let now = options.now();
 
-    const rows =
-      options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error));
-
-    const [failure] = errors;
-
+  const render = () => {
     const lines =
       failure === undefined
-        ? draw(rows, now, options.width, options.color)
+        ? draw(rows, now, options.width, options.color, keyed && rows.length > 0 ? selection.index : undefined)
         : drawUnreadable(failure.message, options.width);
 
     options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
+  };
 
-    if (options.once) return;
+  const ids = () => rows.map((row) => row.sessionId);
 
-    try {
-      await sleep(options.intervalMs, undefined, { signal: options.signal });
-    } catch {
-      return;
+  const onData = (chunk: Buffer | string) => {
+    for (const key of parseKeys(String(chunk))) {
+      if (key === KEY.quit) return abort();
+
+      selection = move(selection, ids(), key === KEY.down ? 1 : -1);
+    }
+
+    render();
+  };
+
+  options.signal.addEventListener("abort", abort);
+
+  if (options.signal.aborted) abort();
+
+  if (keyed) {
+    input.setRawMode?.(true);
+    input.resume();
+    input.on("data", onData);
+  }
+
+  try {
+    while (!local.signal.aborted) {
+      now = options.now();
+      const errors: Error[] = [];
+
+      rows = options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error));
+      failure = errors[0];
+      selection = reconcile(selection, ids());
+      render();
+
+      if (options.once) return;
+
+      try {
+        await sleep(options.intervalMs, undefined, { signal: local.signal });
+      } catch {
+        return;
+      }
+    }
+  } finally {
+    options.signal.removeEventListener("abort", abort);
+
+    if (keyed) {
+      input.off("data", onData);
+      input.setRawMode?.(false);
+      input.pause();
     }
   }
 }
