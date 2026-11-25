@@ -29,7 +29,7 @@ export const realRun: Run = (argv) => {
 function focusTmux(pane: string, run: Run): RunResult {
   if (!TMUX_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a tmux pane id" };
 
-  const verbs = ["select-window", "select-pane", "switch-client"];
+  const verbs = ["switch-client", "select-window", "select-pane"];
 
   for (const verb of verbs) {
     const result = run(["tmux", verb, "-t", pane]);

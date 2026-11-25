@@ -186,7 +186,7 @@ test("Enter on a row with a pane runs the focus commands and shows no error", as
   input.emit("data", Buffer.from("\r"));
   input.emit("data", Buffer.from("q"));
   await done;
-  assert.deepEqual(calls.map((argv) => argv[1]), ["select-window", "select-pane", "switch-client"]);
+  assert.deepEqual(calls.map((argv) => argv[1]), ["switch-client", "select-window", "select-pane"]);
   assert.deepEqual(calls[0]?.slice(2), ["-t", "%7"]);
   const last = frames.at(-1) ?? "";
   assert.ok(!last.includes("no pane"));

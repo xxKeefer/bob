@@ -16,14 +16,27 @@ function recorder(result: RunResult = { ok: true }) {
   };
 }
 
-test("tmux focus runs only select-window, select-pane, and switch-client on the stored pane", () => {
+test("tmux focus runs only switch-client, select-window, and select-pane on the stored pane", () => {
   const { calls, run } = recorder();
   assert.deepEqual(focus("tmux", "work", "%12", run), { ok: true });
   assert.deepEqual(calls, [
+    ["tmux", "switch-client", "-t", "%12"],
     ["tmux", "select-window", "-t", "%12"],
     ["tmux", "select-pane", "-t", "%12"],
-    ["tmux", "switch-client", "-t", "%12"],
   ]);
+});
+
+test("a failed switch-client moves no focus", () => {
+  const calls: string[][] = [];
+
+  const run = (argv: string[]): RunResult => {
+    calls.push(argv);
+
+    return argv[1] === "switch-client" ? { ok: false, message: "no current client" } : { ok: true };
+  };
+
+  assert.deepEqual(focus("tmux", "work", "%12", run), { ok: false, message: "no current client" });
+  assert.deepEqual(calls, [["tmux", "switch-client", "-t", "%12"]]);
 });
 
 for (const pane of ["%1; rm -rf /", "%1 %2", "$(id)", "%", "%a1", "1", "%1\n", "-t", "%1`id`"]) {
