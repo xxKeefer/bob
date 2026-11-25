@@ -7,6 +7,8 @@ export type Run = (argv: string[]) => RunResult;
 export type FocusResult = { ok: true } | { ok: false; message: string };
 
 const TMUX_PANE_ID = /^%\d+$/;
+const ZELLIJ_PANE_ID = /^(terminal_)?\d+$/;
+const ZELLIJ_SESSION = /^[^-\s][^\n]*$/;
 const RUN_TIMEOUT_MS = 2000;
 
 export const realRun: Run = (argv) => {
@@ -38,13 +40,23 @@ function focusTmux(pane: string, run: Run): FocusResult {
   return { ok: true };
 }
 
-export function focus(mux: string, _session: string, pane: string, run: Run): FocusResult {
+function focusZellij(session: string, pane: string, run: Run): FocusResult {
+  if (!ZELLIJ_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a zellij pane id" };
+
+  if (!ZELLIJ_SESSION.test(session)) return { ok: false, message: "no zellij session for this session" };
+
+  const result = run(["zellij", "--session", session, "action", "focus-pane-id", pane]);
+
+  return result.ok ? { ok: true } : { ok: false, message: result.reason };
+}
+
+export function focus(mux: string, session: string, pane: string, run: Run): FocusResult {
   if (pane === "") return { ok: false, message: "no pane for this session" };
 
   try {
     if (mux === "tmux") return focusTmux(pane, run);
 
-    if (mux === "zellij") return { ok: false, message: "zellij is not supported yet" };
+    if (mux === "zellij") return focusZellij(session, pane, run);
 
     return { ok: false, message: "no multiplexer for this session" };
   } catch (error) {

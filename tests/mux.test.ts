@@ -63,9 +63,46 @@ test("a missing binary gives a message and does not throw", () => {
   assert.equal(result.ok, false);
 });
 
-test("zellij and unknown multiplexers give a message and run no command", () => {
+test("zellij focus runs only focus-pane-id on the stored session and pane", () => {
   const { calls, run } = recorder();
-  assert.deepEqual(focus("zellij", "work", "3", run), { ok: false, message: "zellij is not supported yet" });
+  assert.deepEqual(focus("zellij", "work", "3", run), { ok: true });
+  assert.deepEqual(calls, [["zellij", "--session", "work", "action", "focus-pane-id", "3"]]);
+});
+
+test("zellij accepts the terminal_ prefix form", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(focus("zellij", "work", "terminal_3", run), { ok: true });
+  assert.deepEqual(calls, [["zellij", "--session", "work", "action", "focus-pane-id", "terminal_3"]]);
+});
+
+for (const pane of ["3; rm -rf /", "3 4", "$(id)", "terminal_", "terminal_a", "%3", "3\n", "-3", "plugin_1"]) {
+  test(`zellij pane ${JSON.stringify(pane)} runs no command`, () => {
+    const { calls, run } = recorder();
+    assert.equal(focus("zellij", "work", pane, run).ok, false);
+    assert.deepEqual(calls, []);
+  });
+}
+
+test("zellij with an empty pane gives the no-pane message and runs no command", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(focus("zellij", "work", "", run), { ok: false, message: "no pane for this session" });
+  assert.deepEqual(calls, []);
+});
+
+test("a zellij failure gives its reason", () => {
+  const { run } = recorder({ ok: false, reason: "Pane with id Terminal(99) not found" });
+  assert.deepEqual(focus("zellij", "work", "99", run), { ok: false, message: "Pane with id Terminal(99) not found" });
+});
+
+test("a zellij session name that is empty or starts with a dash runs no command", () => {
+  const { calls, run } = recorder();
+  assert.equal(focus("zellij", "", "3", run).ok, false);
+  assert.equal(focus("zellij", "-x", "3", run).ok, false);
+  assert.deepEqual(calls, []);
+});
+
+test("an unknown multiplexer gives a message and runs no command", () => {
+  const { calls, run } = recorder();
   assert.equal(focus("", "", "%1", run).ok, false);
   assert.deepEqual(calls, []);
 });
