@@ -216,6 +216,18 @@ test("a failed jump shows the reason and Bob keeps refreshing", async () => {
   await done;
 });
 
+test("a failed jump message drops escape sequences and fits the width", async () => {
+  const message = "x\x1b[2J" + "y".repeat(200);
+  const { input, frames, done } = jump(seededPanes(), () => ({ ok: false, message }));
+  input.emit("data", Buffer.from("\r"));
+  const last = frames.at(-1)?.split("\n") ?? [];
+  input.emit("data", Buffer.from("q"));
+  await done;
+  const line = last.find((candidate) => candidate.includes("x") && candidate.includes("yyy")) ?? "";
+
+  assert.ok(line !== "" && !line.includes("\x1b") && line.length <= 80);
+});
+
 test("a jump keeps refreshing and writes no file", async () => {
   const dir = seededPanes();
   const snapshot = () => readdirSync(dir).map((name) => `${name}:${statSync(join(dir, name)).mtimeMs}:${statSync(join(dir, name)).size}`);
