@@ -273,3 +273,25 @@ test("a lookup that throws keeps the pane and stores an empty name", () => {
   assert.equal(row?.mux_session, "");
   assert.equal(row?.pane_id, "%4");
 });
+
+test("a blank zellij pane falls through to tmux", () => {
+  const dir = tempDir();
+  sendWith(dir, "SessionStart", "a", 100, { ZELLIJ_PANE_ID: "   ", TMUX_PANE: "%1" });
+  const [row] = rows(dir);
+  assert.equal(row?.multiplexer, "tmux");
+  assert.equal(row?.pane_id, "%1");
+});
+
+test("zellij session name is trimmed", () => {
+  const dir = tempDir();
+  sendWith(dir, "SessionStart", "a", 100, { ZELLIJ_PANE_ID: "3", ZELLIJ_SESSION_NAME: "  Acme  " });
+  const [row] = rows(dir);
+  assert.equal(row?.mux_session, "Acme");
+});
+
+test("a tmux name with a newline keeps only its first line", () => {
+  const dir = tempDir();
+  sendTmux(dir, () => "line1\nline2");
+  const [row] = rows(dir);
+  assert.equal(row?.mux_session, "line1");
+});

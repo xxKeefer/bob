@@ -41,18 +41,18 @@ interface Mux {
 
 function lookupName(lookup: TmuxLookup, pane: string): string {
   try {
-    return lookup(pane);
+    return lookup(pane).trim().split("\n")[0] ?? "";
   } catch {
     return "";
   }
 }
 
 function detectMux(env: Record<string, string | undefined>, lookup: TmuxLookup): Mux {
-  const zellijPane = toStringOrEmpty(env.ZELLIJ_PANE_ID);
+  const zellijPane = toStringOrEmpty(env.ZELLIJ_PANE_ID).trim();
 
-  if (zellijPane !== "") return { name: "zellij", session: toStringOrEmpty(env.ZELLIJ_SESSION_NAME), pane: zellijPane };
+  if (zellijPane !== "") return { name: "zellij", session: toStringOrEmpty(env.ZELLIJ_SESSION_NAME).trim(), pane: zellijPane };
 
-  const tmuxPane = toStringOrEmpty(env.TMUX_PANE);
+  const tmuxPane = toStringOrEmpty(env.TMUX_PANE).trim();
 
   if (tmuxPane !== "") return { name: "tmux", session: lookupName(lookup, tmuxPane), pane: tmuxPane };
 
