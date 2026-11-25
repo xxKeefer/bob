@@ -178,3 +178,67 @@ test("since resets at the stale limit for a repeated UserPromptSubmit too", () =
   send(dir, "UserPromptSubmit", "a", 100 + STALE_SECONDS - 1 + STALE_SECONDS);
   assert.equal(rows(dir)[0]?.since, 100 + STALE_SECONDS - 1 + STALE_SECONDS);
 });
+
+function sendWith(dir: string, event: string, id: string, now: number, env: Record<string, string>): void {
+  const raw = JSON.stringify({ hook_event_name: event, session_id: id, cwd: "/w/" + id });
+  handle(dir, raw, now, env, () => "");
+}
+
+test("zellij env stores the multiplexer, the session name, and the pane", () => {
+  const dir = tempDir();
+  sendWith(dir, "SessionStart", "a", 100, { ZELLIJ_PANE_ID: "3", ZELLIJ_SESSION_NAME: "work" });
+  const [row] = rows(dir);
+  assert.equal(row?.multiplexer, "zellij");
+  assert.equal(row?.mux_session, "work");
+  assert.equal(row?.pane_id, "3");
+});
+
+test("zellij values win when tmux and zellij are both set", () => {
+  const dir = tempDir();
+  sendWith(dir, "SessionStart", "a", 100, {
+    TMUX_PANE: "%1",
+    ZELLIJ_PANE_ID: "3",
+    ZELLIJ_SESSION_NAME: "work",
+  });
+  const [row] = rows(dir);
+  assert.equal(row?.multiplexer, "zellij");
+  assert.equal(row?.mux_session, "work");
+  assert.equal(row?.pane_id, "3");
+});
+
+test("no multiplexer stores three empty values", () => {
+  const dir = tempDir();
+  sendWith(dir, "SessionStart", "a", 100, {});
+  const [row] = rows(dir);
+  assert.equal(row?.multiplexer, "");
+  assert.equal(row?.mux_session, "");
+  assert.equal(row?.pane_id, "");
+});
+
+test("a database from before the multiplexer columns gains them and keeps old rows", () => {
+  const dir = tempDir();
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec(
+    "create table sessions (session_id text primary key, cwd text not null, status text not null, since integer not null, updated integer not null, reason text not null, transcript_path text not null default '')",
+  );
+  db.exec("insert into sessions values ('old', '/w/old', 'idle', 1, 1, '', '')");
+  db.close();
+  sendWith(dir, "SessionStart", "new", 50, { ZELLIJ_PANE_ID: "7", ZELLIJ_SESSION_NAME: "s" });
+  const found = rows(dir);
+  assert.equal(found.length, 2);
+  assert.equal(found[0]?.session_id, "new");
+  assert.equal(found[0]?.pane_id, "7");
+  assert.equal(found[1]?.session_id, "old");
+  assert.equal(found[1]?.multiplexer, "");
+});
+
+test("a later event with an empty environment keeps the stored multiplexer values", () => {
+  const dir = tempDir();
+  sendWith(dir, "SessionStart", "a", 100, { ZELLIJ_PANE_ID: "3", ZELLIJ_SESSION_NAME: "work" });
+  sendWith(dir, "Stop", "a", 110, {});
+  sendWith(dir, "UserPromptSubmit", "a", 120, {});
+  const [row] = rows(dir);
+  assert.equal(row?.multiplexer, "zellij");
+  assert.equal(row?.mux_session, "work");
+  assert.equal(row?.pane_id, "3");
+});

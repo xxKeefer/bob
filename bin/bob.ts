@@ -20,7 +20,7 @@ function runHook(): void {
 
     if (dir === undefined) return;
 
-    handle(dir, readFileSync(0, "utf8"), Math.floor(Date.now() / 1000));
+    handle(dir, readFileSync(0, "utf8"), Math.floor(Date.now() / 1000), process.env);
   } catch {
     void 0;
   }

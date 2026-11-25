@@ -146,3 +146,16 @@ test("a relative BOB_STATE_DIR writes nothing and exits 0", () => {
   assert.equal(result.status, 0);
   assert.deepEqual(readdirSync(work), []);
 });
+
+test("outside a multiplexer the row holds three empty values and the hook exits 0", () => {
+  const dir = tempDir();
+  const env = { ...process.env, BOB_STATE_DIR: dir, TMUX_PANE: undefined, ZELLIJ_PANE_ID: undefined, ZELLIJ_SESSION_NAME: undefined };
+  const result = spawnSync("node", [bin, "hook"], { input: payload("SessionStart", "a"), env, encoding: "utf8" });
+  assert.equal(result.status, 0);
+  const db = new DatabaseSync(join(dir, "bob.db"), { readOnly: true });
+  const row = db.prepare("select multiplexer, mux_session, pane_id from sessions").get();
+  db.close();
+  assert.equal(row?.multiplexer, "");
+  assert.equal(row?.mux_session, "");
+  assert.equal(row?.pane_id, "");
+});
