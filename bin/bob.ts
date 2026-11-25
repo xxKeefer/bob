@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
@@ -14,13 +15,22 @@ function stateDir(): string | undefined {
   return isAbsolute(path) ? path : undefined;
 }
 
+function tmuxSession(pane: string): string {
+  const result = spawnSync("tmux", ["display-message", "-p", "-t", pane, "#{session_name}"], {
+    encoding: "utf8",
+    timeout: 200,
+  });
+
+  return result.error === undefined && result.status === 0 ? result.stdout.trim() : "";
+}
+
 function runHook(): void {
   try {
     const dir = stateDir();
 
     if (dir === undefined) return;
 
-    handle(dir, readFileSync(0, "utf8"), Math.floor(Date.now() / 1000), process.env);
+    handle(dir, readFileSync(0, "utf8"), Math.floor(Date.now() / 1000), process.env, tmuxSession);
   } catch {
     void 0;
   }

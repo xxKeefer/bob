@@ -242,3 +242,34 @@ test("a later event with an empty environment keeps the stored multiplexer value
   assert.equal(row?.mux_session, "work");
   assert.equal(row?.pane_id, "3");
 });
+
+function sendTmux(dir: string, lookup: (pane: string) => string): void {
+  const raw = JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/a" });
+  handle(dir, raw, 100, { TMUX_PANE: "%4" }, lookup);
+}
+
+test("tmux env and a lookup store the multiplexer, the looked-up name, and the pane", () => {
+  const dir = tempDir();
+  const asked: string[] = [];
+  sendTmux(dir, (pane) => {
+    asked.push(pane);
+
+    return "main";
+  });
+  const [row] = rows(dir);
+  assert.deepEqual(asked, ["%4"]);
+  assert.equal(row?.multiplexer, "tmux");
+  assert.equal(row?.mux_session, "main");
+  assert.equal(row?.pane_id, "%4");
+});
+
+test("a lookup that throws keeps the pane and stores an empty name", () => {
+  const dir = tempDir();
+  sendTmux(dir, () => {
+    throw new Error("no tmux");
+  });
+  const [row] = rows(dir);
+  assert.equal(row?.multiplexer, "tmux");
+  assert.equal(row?.mux_session, "");
+  assert.equal(row?.pane_id, "%4");
+});

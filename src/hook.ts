@@ -37,10 +37,22 @@ interface Mux {
   pane: string;
 }
 
-function detectMux(env: Record<string, string | undefined>): Mux {
+function lookupName(lookup: TmuxLookup, pane: string): string {
+  try {
+    return lookup(pane);
+  } catch {
+    return "";
+  }
+}
+
+function detectMux(env: Record<string, string | undefined>, lookup: TmuxLookup): Mux {
   const zellijPane = toStringOrEmpty(env.ZELLIJ_PANE_ID);
 
   if (zellijPane !== "") return { multiplexer: "zellij", session: toStringOrEmpty(env.ZELLIJ_SESSION_NAME), pane: zellijPane };
+
+  const tmuxPane = toStringOrEmpty(env.TMUX_PANE);
+
+  if (tmuxPane !== "") return { multiplexer: "tmux", session: lookupName(lookup, tmuxPane), pane: tmuxPane };
 
   return { multiplexer: "", session: "", pane: "" };
 }
@@ -71,7 +83,7 @@ export function handle(
   raw: string,
   now: number,
   env: Record<string, string | undefined> = {},
-  _tmuxSession: TmuxLookup = () => "",
+  tmuxSession: TmuxLookup = () => "",
 ): void {
   const payload: Payload = JSON.parse(raw) ?? {};
   const event = toStringOrEmpty(payload.hook_event_name);
@@ -81,7 +93,7 @@ export function handle(
 
   if (id === "" || (!isEnd && status === undefined)) return;
 
-  const mux = detectMux(env);
+  const mux = detectMux(env, tmuxSession);
 
   mkdirSync(stateDir, { recursive: true });
   const db = new DatabaseSync(join(stateDir, "bob.db"), { timeout: BUSY_TIMEOUT_MS });
