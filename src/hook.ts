@@ -27,12 +27,14 @@ interface Payload {
 const SCHEMA =
   "create table if not exists sessions (session_id text primary key, cwd text not null, status text not null, since integer not null, updated integer not null, reason text not null, transcript_path text not null default '', multiplexer text not null default '', mux_session text not null default '', pane_id text not null default '')";
 
-const ADDED_COLUMNS = ["transcript_path", "multiplexer", "mux_session", "pane_id"];
+const ADDED_COLUMNS = ["transcript_path", "multiplexer", "mux_session", "pane_id"] as const;
 
 type TmuxLookup = (pane: string) => string;
 
+type MuxName = "zellij" | "tmux" | "";
+
 interface Mux {
-  multiplexer: string;
+  name: MuxName;
   session: string;
   pane: string;
 }
@@ -48,13 +50,13 @@ function lookupName(lookup: TmuxLookup, pane: string): string {
 function detectMux(env: Record<string, string | undefined>, lookup: TmuxLookup): Mux {
   const zellijPane = toStringOrEmpty(env.ZELLIJ_PANE_ID);
 
-  if (zellijPane !== "") return { multiplexer: "zellij", session: toStringOrEmpty(env.ZELLIJ_SESSION_NAME), pane: zellijPane };
+  if (zellijPane !== "") return { name: "zellij", session: toStringOrEmpty(env.ZELLIJ_SESSION_NAME), pane: zellijPane };
 
   const tmuxPane = toStringOrEmpty(env.TMUX_PANE);
 
-  if (tmuxPane !== "") return { multiplexer: "tmux", session: lookupName(lookup, tmuxPane), pane: tmuxPane };
+  if (tmuxPane !== "") return { name: "tmux", session: lookupName(lookup, tmuxPane), pane: tmuxPane };
 
-  return { multiplexer: "", session: "", pane: "" };
+  return { name: "", session: "", pane: "" };
 }
 
 const UPSERT =
@@ -117,9 +119,9 @@ export function handle(
       const transcript = toStringOrEmpty(payload.transcript_path);
 
       if (INSERTING_EVENTS.has(event)) {
-        db.prepare(UPSERT).run(id, cwd, status ?? "", now, now, reason, transcript, mux.multiplexer, mux.session, mux.pane, STALE_SECONDS);
+        db.prepare(UPSERT).run(id, cwd, status ?? "", now, now, reason, transcript, mux.name, mux.session, mux.pane, STALE_SECONDS);
       } else {
-        db.prepare(UPDATE).run(cwd, status ?? "", now, STALE_SECONDS, now, status ?? "", now, reason, transcript, mux.multiplexer, mux.session, mux.pane, id);
+        db.prepare(UPDATE).run(cwd, status ?? "", now, STALE_SECONDS, now, status ?? "", now, reason, transcript, mux.name, mux.session, mux.pane, id);
       }
     }
 

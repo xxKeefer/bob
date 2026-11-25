@@ -147,14 +147,20 @@ test("a relative BOB_STATE_DIR writes nothing and exits 0", () => {
   assert.deepEqual(readdirSync(work), []);
 });
 
+function muxRow(dir: string) {
+  const db = new DatabaseSync(join(dir, "bob.db"), { readOnly: true });
+  const row = db.prepare("select multiplexer, mux_session, pane_id from sessions").get();
+  db.close();
+
+  return row;
+}
+
 test("outside a multiplexer the row holds three empty values and the hook exits 0", () => {
   const dir = tempDir();
   const env = { ...process.env, BOB_STATE_DIR: dir, TMUX_PANE: undefined, ZELLIJ_PANE_ID: undefined, ZELLIJ_SESSION_NAME: undefined };
   const result = spawnSync("node", [bin, "hook"], { input: payload("SessionStart", "a"), env, encoding: "utf8" });
   assert.equal(result.status, 0);
-  const db = new DatabaseSync(join(dir, "bob.db"), { readOnly: true });
-  const row = db.prepare("select multiplexer, mux_session, pane_id from sessions").get();
-  db.close();
+  const row = muxRow(dir);
   assert.equal(row?.multiplexer, "");
   assert.equal(row?.mux_session, "");
   assert.equal(row?.pane_id, "");
@@ -180,14 +186,6 @@ function runTmux(dir: string, fakeBin: string) {
   return spawnSync("node", [bin, "hook"], { input: payload("SessionStart", "a"), env, encoding: "utf8" });
 }
 
-function muxRow(dir: string) {
-  const db = new DatabaseSync(join(dir, "bob.db"), { readOnly: true });
-  const row = db.prepare("select multiplexer, mux_session, pane_id from sessions").get();
-  db.close();
-
-  return row;
-}
-
 test("a fake tmux gives the session name through the real command", () => {
   const dir = tempDir();
   const fake = fakeTmux('[ "$1 $2 $3 $4" = "display-message -p -t %2" ] && [ "$5" = "#{session_name}" ] && echo work');
@@ -206,6 +204,15 @@ test("a tmux that hangs still lets the hook store the pane and exit 0", () => {
   const took = Date.now() - start;
   assert.equal(result.status, 0);
   assert.ok(took < 2000, "took " + took);
+  const row = muxRow(dir);
+  assert.equal(row?.mux_session, "");
+  assert.equal(row?.pane_id, "%2");
+});
+
+test("a tmux that fails with output stores an empty name and the pane and exits 0", () => {
+  const dir = tempDir();
+  const result = runTmux(dir, fakeTmux("echo boom; exit 1"));
+  assert.equal(result.status, 0);
   const row = muxRow(dir);
   assert.equal(row?.mux_session, "");
   assert.equal(row?.pane_id, "%2");

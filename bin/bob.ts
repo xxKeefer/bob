@@ -15,10 +15,12 @@ function stateDir(): string | undefined {
   return isAbsolute(path) ? path : undefined;
 }
 
+const TMUX_TIMEOUT_MS = 200;
+
 function tmuxSession(pane: string): string {
   const result = spawnSync("tmux", ["display-message", "-p", "-t", pane, "#{session_name}"], {
     encoding: "utf8",
-    timeout: 200,
+    timeout: TMUX_TIMEOUT_MS,
   });
 
   return result.error === undefined && result.status === 0 ? result.stdout.trim() : "";
