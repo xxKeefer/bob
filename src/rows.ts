@@ -1,8 +1,8 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import { Multiplexers } from "./mux.ts";
-import type { Multiplexer } from "./mux.ts";
+import { toMultiplexer } from "./multiplexer.ts";
+import type { Multiplexer } from "./multiplexer.ts";
 import { readUsage } from "./transcript.ts";
 import type { Usage } from "./transcript.ts";
 
@@ -28,12 +28,6 @@ const RANK = new Map([
   ["idle", 2],
   ["stale", 3],
 ]);
-
-function toMultiplexer(value: string): Multiplexer {
-  if (value === Multiplexers.tmux || value === Multiplexers.zellij) return value;
-
-  return Multiplexers.none;
-}
 
 function rank(status: string): number {
   return RANK.get(status) ?? RANK.size;

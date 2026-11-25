@@ -184,3 +184,22 @@ test("a row carries the multiplexer, session, and pane, and an older database gi
   assert.equal(oldRow?.muxSession, "");
   assert.equal(oldRow?.paneId, "");
 });
+
+test("a zellij row stores and loads the multiplexer, session, and pane", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, {}, { ZELLIJ_PANE_ID: "4", ZELLIJ_SESSION_NAME: "zs" });
+  const [row] = loadRows(dir, 150);
+  assert.equal(row?.multiplexer, "zellij");
+  assert.equal(row?.muxSession, "zs");
+  assert.equal(row?.paneId, "4");
+});
+
+test("an unknown stored multiplexer loads as empty", () => {
+  const dir = tempDir();
+  send(dir, "SessionStart", "a", 100, {}, { TMUX_PANE: "%3" }, "work");
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec("update sessions set multiplexer = 'screen'");
+  db.close();
+  const [row] = loadRows(dir, 150);
+  assert.equal(row?.multiplexer, "");
+});

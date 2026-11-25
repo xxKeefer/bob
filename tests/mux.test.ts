@@ -107,3 +107,11 @@ test("realRun gives a not-found reason for a missing binary", () => {
 test("realRun gives the first stderr line when the command fails", () => {
   assert.deepEqual(realRun(["node", "-e", "console.error('x\\ny');process.exit(3)"]), { ok: false, message: "x" });
 });
+
+test("realRun gives a non-empty timeout reason for a command that outlives the timeout", () => {
+  const result = realRun(["node", "-e", "setTimeout(()=>{},10000)"]);
+  assert.equal(result.ok, false);
+  const message = result.ok ? "" : result.message;
+  assert.notEqual(message, "");
+  assert.notEqual(message, "exited with null");
+});

@@ -4,6 +4,7 @@ import { EventEmitter } from "node:events";
 import { mkdtempSync, readdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 import { main } from "../src/view.ts";
@@ -277,4 +278,33 @@ test("the selection follows its session when a refresh changes the sort order", 
   input.emit("data", Buffer.from("q"));
   await done;
   assert.equal(calls[0]?.at(-1), "%8");
+});
+
+test("Enter on a zellij row runs focus-pane-id in the stored session", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-zellij-"));
+  const env = { ZELLIJ_PANE_ID: "4", ZELLIJ_SESSION_NAME: "zs" };
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/a" }), 1000, env);
+  const calls: string[][] = [];
+  const { input, done } = jump(dir, (argv) => (calls.push(argv), { ok: true }));
+  input.emit("data", Buffer.from("\r"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, [["zellij", "--session", "zs", "action", "focus-pane-id", "4"]]);
+});
+
+test("a failed jump message goes when a refresh drops the selected row", async () => {
+  const dir = seededPanes();
+  const { input, frames, done } = jump(dir, () => ({ ok: false, message: "can't find pane: %7" }));
+  input.emit("data", Buffer.from("\r"));
+  assert.ok(frames.at(-1)?.includes("can't find pane: %7"));
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  db.exec("delete from sessions where session_id = 'a'");
+  db.close();
+  const count = frames.length;
+  await sleepMs(60);
+  assert.ok(frames.length > count);
+  const last = frames.at(-1) ?? "";
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.ok(!last.includes("can't find pane"));
 });

@@ -1,14 +1,10 @@
 import { spawnSync } from "node:child_process";
-
-export const Multiplexers = { tmux: "tmux", zellij: "zellij", none: "" } as const;
-
-export type Multiplexer = (typeof Multiplexers)[keyof typeof Multiplexers];
+import { Multiplexers } from "./multiplexer.ts";
+import type { Multiplexer } from "./multiplexer.ts";
 
 export type RunResult = { ok: true } | { ok: false; message: string };
 
 export type Run = (argv: string[]) => RunResult;
-
-type FocusResult = { ok: true } | { ok: false; message: string };
 
 const TMUX_PANE_ID = /^%\d+$/;
 const ZELLIJ_PANE_ID = /^(terminal_)?\d+$/;
@@ -30,7 +26,7 @@ export const realRun: Run = (argv) => {
   return { ok: false, message: result.stderr.trim().split("\n")[0] || `${command} exited with ${result.status}` };
 };
 
-function focusTmux(pane: string, run: Run): FocusResult {
+function focusTmux(pane: string, run: Run): RunResult {
   if (!TMUX_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a tmux pane id" };
 
   const verbs = ["select-window", "select-pane", "switch-client"];
@@ -44,7 +40,7 @@ function focusTmux(pane: string, run: Run): FocusResult {
   return { ok: true };
 }
 
-function focusZellij(session: string, pane: string, run: Run): FocusResult {
+function focusZellij(session: string, pane: string, run: Run): RunResult {
   if (!ZELLIJ_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a zellij pane id" };
 
   if (!ZELLIJ_SESSION.test(session)) return { ok: false, message: "no zellij session for this session" };
@@ -54,7 +50,7 @@ function focusZellij(session: string, pane: string, run: Run): FocusResult {
   return result;
 }
 
-export function focus(multiplexer: Multiplexer, session: string, pane: string, run: Run): FocusResult {
+export function focus(multiplexer: Multiplexer, session: string, pane: string, run: Run): RunResult {
   if (pane === "") return { ok: false, message: "no pane for this session" };
 
   try {
