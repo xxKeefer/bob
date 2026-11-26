@@ -8,6 +8,7 @@ import type { Key } from "./keys.ts";
 import type { KeyInput } from "./keys.ts";
 import { focus, open, realCapture, realRun } from "./mux.ts";
 import type { Capture, Run } from "./mux.ts";
+import type { PlanCache, PlanProgress } from "./plan.ts";
 import type { Exec, PrCache, PrInfo } from "./pr.ts";
 import { DEFAULT_STUCK_SECONDS, loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
@@ -40,6 +41,7 @@ const BAR_CELLS = 8;
 const CONTEXT_COLUMN_WIDTH = BAR_CELLS + 5;
 const MODEL_COLUMN_WIDTH = 10;
 const PR_COLUMN_WIDTH = 13;
+const PLAN_COLUMN_WIDTH = 7;
 const PROJECT_COLUMN_WIDTH = 20;
 const COLUMN_GAP = 2;
 const MIN_REASON_WIDTH = 20;
@@ -137,6 +139,7 @@ function shortModel(model: string): string {
 
 interface Layout {
   modelWidth: number;
+  planWidth: number;
   prWidth: number;
   projectWidth: number;
 }
@@ -164,24 +167,27 @@ function prCell(info: PrInfo): string {
   return `${info.state.padEnd(6)} ${PR_GLYPH.get(info.ci) ?? "-"} ${PR_REVIEW.get(info.review) ?? ""}`.trimEnd();
 }
 
-function layout(width: number, withPr: boolean): Layout {
+function layout(width: number, withPr: boolean, withPlan: boolean): Layout {
   const fixed = STATUS_COLUMN_WIDTH + AGE_COLUMN_WIDTH + CONTEXT_COLUMN_WIDTH + COLUMN_GAP * 4;
-  const prSpan = withPr ? PR_COLUMN_WIDTH + COLUMN_GAP : 0;
-  const wanted = fixed + COLUMN_GAP + PROJECT_COLUMN_WIDTH + MIN_REASON_WIDTH + prSpan;
+  const tiers = [{ model: true, plan: withPlan, pr: withPr }];
 
-  if (wanted + MODEL_COLUMN_WIDTH + COLUMN_GAP <= width) {
-    return { modelWidth: MODEL_COLUMN_WIDTH, prWidth: withPr ? PR_COLUMN_WIDTH : 0, projectWidth: PROJECT_COLUMN_WIDTH };
-  }
+  if (withPlan && withPr) tiers.push({ model: false, plan: true, pr: true }, { model: false, plan: false, pr: true });
+  else if (withPlan || withPr) tiers.push({ model: false, plan: withPlan, pr: withPr });
 
-  const room = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH - prSpan;
+  for (const [index, tier] of tiers.entries()) {
+    const modelWidth = tier.model ? MODEL_COLUMN_WIDTH : 0;
+    const planWidth = tier.plan ? PLAN_COLUMN_WIDTH : 0;
+    const prWidth = tier.pr ? PR_COLUMN_WIDTH : 0;
+    const spans = [modelWidth, planWidth, prWidth].reduce((sum, value) => sum + (value === 0 ? 0 : value + COLUMN_GAP), 0);
+    const room = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH - spans;
+    const needed = index === 0 ? PROJECT_COLUMN_WIDTH : MIN_PROJECT_COLUMN_WIDTH;
 
-  if (withPr && room >= MIN_PROJECT_COLUMN_WIDTH) {
-    return { modelWidth: 0, prWidth: PR_COLUMN_WIDTH, projectWidth: Math.min(PROJECT_COLUMN_WIDTH, room) };
+    if (room >= needed) return { modelWidth, planWidth, prWidth, projectWidth: Math.min(PROJECT_COLUMN_WIDTH, room) };
   }
 
   const bare = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH;
 
-  return { modelWidth: 0, prWidth: 0, projectWidth: Math.max(MIN_PROJECT_COLUMN_WIDTH, Math.min(PROJECT_COLUMN_WIDTH, bare)) };
+  return { modelWidth: 0, planWidth: 0, prWidth: 0, projectWidth: Math.max(MIN_PROJECT_COLUMN_WIDTH, Math.min(PROJECT_COLUMN_WIDTH, bare)) };
 }
 
 const GUTTER = "  ";
@@ -196,10 +202,11 @@ export function draw(
   color = false,
   selected?: number,
   prs: Map<string, PrInfo> = new Map(),
+  plans: Map<string, PlanProgress> = new Map(),
 ): string[] {
-  if (selected === undefined || rows.length === 0) return drawRows(rows, now, width, color, prs);
+  if (selected === undefined || rows.length === 0) return drawRows(rows, now, width, color, prs, plans);
 
-  const [heading = "", ...lines] = drawRows(rows, now, width - GUTTER.length, color, prs);
+  const [heading = "", ...lines] = drawRows(rows, now, width - GUTTER.length, color, prs, plans);
 
   return [
     GUTTER + heading,
@@ -211,7 +218,14 @@ export function draw(
   ];
 }
 
-function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: Map<string, PrInfo>): string[] {
+function drawRows(
+  rows: Row[],
+  now: number,
+  width: number,
+  color: boolean,
+  prs: Map<string, PrInfo>,
+  plans: Map<string, PlanProgress>,
+): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
   const join = (parts: string[]) => parts.join(" ".repeat(COLUMN_GAP)).trimEnd().slice(0, width);
@@ -219,10 +233,12 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: 
   const ageEnd = ageStart + AGE_COLUMN_WIDTH;
   const contextStart = ageEnd + COLUMN_GAP;
   const withPr = rows.some((row) => prs.has(row.cwd));
-  const { modelWidth, prWidth, projectWidth } = layout(width, withPr);
+  const withPlan = rows.some((row) => plans.has(row.cwd));
+  const { modelWidth, planWidth, prWidth, projectWidth } = layout(width, withPr, withPlan);
   const modelSpan = modelWidth === 0 ? 0 : modelWidth + COLUMN_GAP;
+  const planSpan = planWidth === 0 ? 0 : planWidth + COLUMN_GAP;
   const prSpan = prWidth === 0 ? 0 : prWidth + COLUMN_GAP;
-  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + modelSpan + projectWidth + COLUMN_GAP + prSpan;
+  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + modelSpan + projectWidth + COLUMN_GAP + planSpan + prSpan;
   const prStart = reasonStart - prSpan;
 
   const heading = join([
@@ -231,6 +247,7 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: 
     "CONTEXT".padEnd(CONTEXT_COLUMN_WIDTH),
     ...(modelWidth === 0 ? [] : ["MODEL".padEnd(modelWidth)]),
     "FOLDER".padEnd(projectWidth),
+    ...(planWidth === 0 ? [] : ["PLAN".padEnd(planWidth)]),
     ...(prWidth === 0 ? [] : ["PR".padEnd(prWidth)]),
     "REASON",
   ]);
@@ -239,6 +256,7 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: 
     const cell = row.context === undefined ? undefined : contextCell(row.context.tokens);
     const icon = STATUS_ICON.get(row.status) ?? "-";
     const pr = prs.get(row.cwd);
+    const plan = plans.get(row.cwd);
 
     const line = join([
       `${icon} ${clean(row.status)}`.padEnd(STATUS_COLUMN_WIDTH),
@@ -246,6 +264,7 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: 
       (cell?.text ?? "").padEnd(CONTEXT_COLUMN_WIDTH),
       ...(modelWidth === 0 ? [] : [shortModel(row.context?.model ?? "").padEnd(modelWidth)]),
       `${row.review ? "review " : ""}${clean(basename(row.cwd))}`.slice(0, projectWidth).padEnd(projectWidth),
+      ...(planWidth === 0 ? [] : [(plan === undefined ? "" : `${plan.done}/${plan.total}`).padEnd(planWidth)]),
       ...(prWidth === 0 ? [] : [(pr === undefined ? "" : prCell(pr)).padEnd(prWidth)]),
       clean(row.reason),
     ]);
@@ -294,12 +313,14 @@ export async function main(options: MainOptions): Promise<void> {
   let confirming: Row | undefined;
   let prCache: PrCache | undefined;
   let prs = new Map<string, PrInfo>();
+  let plans = new Map<string, PlanProgress>();
+  let planCache: PlanCache | undefined;
   let stuckSeconds = DEFAULT_STUCK_SECONDS;
 
   const render = () => {
     const lines =
       failure === undefined
-        ? draw(rows, now, options.width, options.color, readsKeys && rows.length > 0 ? selection.index : undefined, prs)
+        ? draw(rows, now, options.width, options.color, readsKeys && rows.length > 0 ? selection.index : undefined, prs, plans)
         : drawUnreadable(failure.message, options.width);
 
     if (message !== "") lines.push(clean(message).slice(0, options.width));
@@ -502,8 +523,9 @@ export async function main(options: MainOptions): Promise<void> {
   const detach = readsKeys ? attachKeys(input, onKeys, capturePrompt) : undefined;
 
   try {
-    const loaded = import("./config.ts").then(({ loadStuckSeconds }) => {
+    const loaded = Promise.all([import("./config.ts"), import("./plan.ts")]).then(([{ loadStuckSeconds, loadPlanDir }, { createPlanCache }]) => {
       stuckSeconds = loadStuckSeconds(options.env ?? process.env, homedir());
+      planCache = createPlanCache(loadPlanDir(options.env ?? process.env, homedir()));
     });
 
     if (options.once) await loaded;
@@ -521,11 +543,16 @@ export async function main(options: MainOptions): Promise<void> {
       rows = options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error), stuckSeconds);
       failure = errors[0];
       prs = new Map();
+      plans = new Map();
 
       for (const row of rows) {
         const info = prCache?.get(row.cwd);
 
         if (info !== undefined) prs.set(row.cwd, info);
+
+        const progress = planCache?.get(row.cwd);
+
+        if (progress !== undefined) plans.set(row.cwd, progress);
       }
 
       const reconciled = reconcile(selection, ids());

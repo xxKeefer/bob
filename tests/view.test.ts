@@ -498,3 +498,64 @@ test("draw shows a stuck row with its own icon and red status", () => {
   const [, colored] = draw([row({ status: "stuck" })], 190, 120, true);
   assert.ok(colored?.startsWith(`${ESC}[31m■ stuck`));
 });
+
+const PLANS = new Map([["/a/my-long-project-name", { done: 3, total: 7 }]]);
+
+test("draw shows done and total plan steps, and nothing for a row with no plan", () => {
+  const [heading, first, second] = draw(PR_ROWS, 190, 160, false, undefined, new Map(), PLANS);
+  assert.match(heading ?? "", /PLAN/);
+  assert.match(first ?? "", /3\/7/);
+  assert.doesNotMatch(second ?? "", /\d\/\d/);
+});
+
+test("draw has no plan column when no row has a plan", () => {
+  const [heading] = draw(PR_ROWS, 190, 160, false, undefined, new Map(), new Map());
+  assert.doesNotMatch(heading ?? "", /PLAN/);
+});
+
+test("draw keeps the heading aligned and the width at every width with plan and PR columns", () => {
+  for (const width of [40, 60, 70, 80, 90, 100, 110, 119, 120, 140, 160]) {
+    for (const color of [false, true]) {
+      const lines = draw(PR_ROWS, 190, width, color, undefined, PRS, PLANS).map((line) => line.replace(SGR, ""));
+      const [heading, waiting] = lines;
+
+      for (const line of lines) assert.ok(line.length <= width, `fit at ${width}`);
+
+      assert.equal(heading?.indexOf("REASON"), waiting?.indexOf("Allow"), `reason at ${width}`);
+
+      if (/PLAN/.test(heading ?? "")) assert.equal(heading?.indexOf("PLAN"), waiting?.indexOf("3/7"), `plan at ${width}`);
+
+      if (/PR /.test(heading ?? "")) assert.equal(heading?.indexOf("PR"), waiting?.indexOf("open"), `pr at ${width}`);
+    }
+  }
+});
+
+test("draw drops the plan column before the PR column as the width shrinks", () => {
+  const wide = draw(PR_ROWS, 190, 120, false, undefined, PRS, PLANS)[0] ?? "";
+  assert.match(wide, /PLAN/);
+  const mid = draw(PR_ROWS, 190, 90, false, undefined, PRS, PLANS)[0] ?? "";
+  assert.doesNotMatch(mid, /PLAN/);
+  assert.match(mid, /PR/);
+});
+
+test("main shows plan progress from the plan dir named in the env", async () => {
+  const state = mkdtempSync(join(tmpdir(), "bob-view-"));
+  const plans = mkdtempSync(join(tmpdir(), "bob-plans-"));
+  mkdirSync(join(plans, "ABC-9"));
+  writeFileSync(join(plans, "ABC-9", "plan_9.md"), "## Steps\n- [x] **1. A.**\n- [ ] **2. B.**\n");
+  handle(state, JSON.stringify({ hook_event_name: "SessionStart", session_id: "p", cwd: "/w/ABC-9" }), 100, {}, () => "");
+  let out = "";
+  await main({
+    stateDir: state,
+    once: true,
+    intervalMs: 5,
+    width: 120,
+    now: () => 200,
+    write: (text) => {
+      out += text;
+    },
+    signal: new AbortController().signal,
+    env: { BOB_PLAN_DIR: plans, BOB_CONFIG_DIR: join(plans, "none") },
+  });
+  assert.match(out, /1\/2/);
+});

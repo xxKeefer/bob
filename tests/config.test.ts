@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadConfig } from "../src/config.ts";
+import { loadConfig, loadPlanDir } from "../src/config.ts";
 
 function dirWith(text: string | undefined): string {
   const dir = mkdtempSync(join(tmpdir(), "bob-config-"));
@@ -76,4 +76,17 @@ test("loadStuckSeconds defaults to 300 and reads a positive stuckSeconds", async
   assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ stuckSeconds: 90 })) }, "/h"), 90);
   assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ stuckSeconds: -1 })) }, "/h"), 300);
   assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ stuckSeconds: "9" })) }, "/h"), 300);
+});
+
+test("the plan dir is the env override, then the config planDir, then the default", () => {
+  const dir = dirWith(JSON.stringify({ repo: "/r", planDir: "/p/reports" }));
+  assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dir, BOB_PLAN_DIR: "/t/plans" }, "/h"), "/t/plans");
+  assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dir }, "/h"), "/p/reports");
+  assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dirWith(undefined) }, "/h"), "/h/studio/work/.ai/reports");
+});
+
+test("the plan dir ignores a relative or non-text value", () => {
+  const dir = dirWith(JSON.stringify({ planDir: "rel" }));
+  assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dir, BOB_PLAN_DIR: "rel" }, "/h"), "/h/studio/work/.ai/reports");
+  assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ planDir: 5 })) }, "/h"), "/h/studio/work/.ai/reports");
 });

@@ -27,6 +27,22 @@ export function loadStuckSeconds(env: Record<string, string | undefined>, home: 
   }
 }
 
+export function loadPlanDir(env: Record<string, string | undefined>, home: string): string {
+  const fallback = join(home, "studio", "work", ".ai", "reports");
+  const override = env.BOB_PLAN_DIR;
+
+  if (isText(override) && isAbsolute(override)) return override;
+
+  try {
+    const parsed = JSON.parse(readFileSync(join(configDir(env, home), "config.json"), "utf8"));
+    const value = parsed?.planDir;
+
+    return isText(value) && isAbsolute(value) ? value : fallback;
+  } catch {
+    return fallback;
+  }
+}
+
 export function loadConfig(env: Record<string, string | undefined>, home: string): ConfigResult {
   const dir = configDir(env, home);
 
