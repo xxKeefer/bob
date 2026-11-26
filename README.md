@@ -82,6 +82,8 @@ Rows sort waiting first (longest wait on top), then busy, then idle, then stale.
 
 The context bar has 8 cells. 300k tokens fills it, and the percentage is tokens divided by 300k. The colour follows the token count: green below 100k, yellow below 200k, amber below 300k, red above. Bob reads the token count and the model from the last entry of the session transcript.
 
+The PR column shows the PR state (`draft`, `open`, `merged`, `closed`), the CI result (`✓` pass, `✗` fail, `…` pending, `-` none), and the review decision (`appr`, `chg`, `rev`). Bob finds the branch with `git rev-parse` in the row's folder and polls `gh pr view` from the view process. It needs `gh` signed in. A folder with no PR shows no cell, and no row with a PR means no column. Each folder gets one call at a time, a 30 second TTL, old data while a refresh runs, and a 2 minute back-off after an error. `bob --once` makes no call. Below 110 columns the model column goes, and below 83 the PR column goes.
+
 Colour shows only on a terminal. Set `NO_COLOR` to turn it off.
 
 ## Where Bob keeps state
