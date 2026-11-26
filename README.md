@@ -49,7 +49,18 @@ To update, run `git pull` in the clone.
 | `bob install` | Print the hook entries Bob needs. |
 | `bob install --write` | Merge the entries into `~/.claude/settings.json`. |
 | `bob prune` | Delete rows not updated in 7 days. Bob shows the count and asks y/N first. Add `--older-than <age>` (a number and `s`, `m`, `h`, `d`, or `w`, such as `12h`) to change the age. Add `--yes` or `-y` to skip the question. |
+| `bob statusline` | Print "N waiting" for the Claude status line, or an empty line when none wait. It skips the calling session and writes nothing. |
 | `bob hook` | The hook that Claude runs. It reads the event on stdin. |
+
+## Status line
+
+To show the waiting count in each Claude session, set the status line command in `~/.claude/settings.json`:
+
+```json
+{ "statusLine": { "type": "command", "command": "bob statusline" } }
+```
+
+Claude sends the session JSON on stdin. Bob reads the `session_id` and leaves that session out of the count. Bob needs `bob` on `PATH` (install step 3). To keep an existing status line, run both commands in one script and join their output.
 
 ## Config
 
