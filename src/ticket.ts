@@ -52,6 +52,7 @@ export function newTicket(
   home: string,
   run: Run,
   capture: Capture,
+  after?: (path: string) => void,
 ): RunResult {
   if (!isTicketKey(key)) return { ok: false, message: "ticket key looks like ABC-123" };
 
@@ -61,5 +62,9 @@ export function newTicket(
 
   const launched = launch(config, ["--create"], key, config.startPrompt.replaceAll("<KEY>", key), env, run, capture);
 
-  return launched.ok ? { ok: true } : launched;
+  if (!launched.ok) return launched;
+
+  after?.(launched.path);
+
+  return { ok: true };
 }

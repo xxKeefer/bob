@@ -75,3 +75,51 @@ export function loadConfig(env: Record<string, string | undefined>, home: string
 
   return { ok: true, repo, startPrompt, reviewPrompt };
 }
+
+export interface DevConfig {
+  command: string[];
+  envFile: string;
+  portMin: number;
+  portMax: number;
+  proxyPort: number;
+}
+
+const DEFAULT_ENV_FILE = ".env.local";
+const DEFAULT_PORT_MIN = 4100;
+const DEFAULT_PORT_MAX = 4199;
+export const DEFAULT_PROXY_PORT = 8181;
+const FIRST_USER_PORT = 1024;
+const LAST_PORT = 65535;
+
+const isPort = (value: unknown, min = 1): value is number => Number.isInteger(value) && Number(value) >= min && Number(value) <= LAST_PORT;
+
+export function loadDev(env: Record<string, string | undefined>, home: string): DevConfig | undefined {
+  try {
+    const parsed = JSON.parse(readFileSync(join(configDir(env, home), "config.json"), "utf8"));
+    const command: unknown = parsed?.devCommand;
+
+    if (!Array.isArray(command) || command.length === 0 || !command.every((part) => isText(part) && part !== "")) return undefined;
+
+    if (String(command[0]).startsWith("-")) return undefined;
+
+    const envFile = parsed.devEnvFile ?? DEFAULT_ENV_FILE;
+
+    if (!isText(envFile) || envFile === "" || envFile === ".." || envFile.includes("/") || envFile.includes("\\")) return undefined;
+
+    const range: unknown = parsed.devPortRange ?? [DEFAULT_PORT_MIN, DEFAULT_PORT_MAX];
+
+    if (!Array.isArray(range) || range.length !== 2) return undefined;
+
+    const [portMin, portMax] = range;
+
+    if (!isPort(portMin, FIRST_USER_PORT) || !isPort(portMax, FIRST_USER_PORT) || portMin > portMax) return undefined;
+
+    const proxyPort: unknown = parsed.proxyPort ?? DEFAULT_PROXY_PORT;
+
+    if (!isPort(proxyPort)) return undefined;
+
+    return { command: command.map(String), envFile, portMin, portMax, proxyPort };
+  } catch {
+    return undefined;
+  }
+}

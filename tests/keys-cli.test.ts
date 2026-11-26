@@ -632,3 +632,57 @@ test("the configured stuckSeconds decides when a busy row is stuck", async () =>
   assert.deepEqual(calls, []);
   assert.ok(last.join("\n").includes("not stuck"));
 });
+
+type TestConfig = { devCommand?: string[]; devEnvFile?: string; devPortRange?: number[]; proxyPort?: number };
+
+function selectedRun(config: TestConfig) {
+  const cfg = mkdtempSync(join(tmpdir(), "bob-cfg-"));
+  writeFileSync(join(cfg, "config.json"), JSON.stringify({ repo: "/r/app", ...config }));
+  const dir = seeded();
+  const input = new FakeInput(true);
+
+  const done = main({
+    stateDir: dir,
+    once: false,
+    intervalMs: 5,
+    width: 100,
+    now: () => 1000,
+    write: () => {},
+    signal: new AbortController().signal,
+    input,
+    env: { TMUX: "x", BOB_CONFIG_DIR: cfg },
+  });
+
+  return { input, done, dir };
+}
+
+test("with a dev command, the selected row folder is written on each selection change", async () => {
+  const { input, done, dir } = selectedRun({ devCommand: ["npm", "run", "dev"] });
+  await sleepMs(80);
+  const first = readFileSync(join(dir, "selected"), "utf8");
+  assert.match(first, /^\/w\/[ab]$/);
+  input.emit("data", Buffer.from("j"));
+  await sleepMs(30);
+  const second = readFileSync(join(dir, "selected"), "utf8");
+  assert.match(second, /^\/w\/[ab]$/);
+  assert.notEqual(second, first);
+  input.emit("data", Buffer.from("q"));
+  await done;
+});
+
+test("with no dev command, no selected file is written", async () => {
+  const { input, done, dir } = selectedRun({});
+  await sleepMs(80);
+  input.emit("data", Buffer.from("j"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.ok(!readdirSync(dir).includes("selected"));
+});
+
+test("bob proxy with no dev command exits 1", () => {
+  const cfg = mkdtempSync(join(tmpdir(), "bob-cfg-"));
+  writeFileSync(join(cfg, "config.json"), JSON.stringify({ repo: "/r/app" }));
+  const result = spawnSync("node", [bin, "proxy"], { encoding: "utf8", env: { ...process.env, BOB_CONFIG_DIR: cfg } });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /devCommand/);
+});

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
-import { loadConfig, loadPlanDir } from "../src/config.ts";
+import { loadConfig, loadDev, loadPlanDir } from "../src/config.ts";
 
 function dirWith(text: string | undefined): string {
   const dir = mkdtempSync(join(tmpdir(), "bob-config-"));
@@ -90,3 +90,41 @@ test("the plan dir ignores a relative or non-text value", () => {
   assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dir, BOB_PLAN_DIR: "rel" }, "/h"), "/h/studio/work/.ai/reports");
   assert.equal(loadPlanDir({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ planDir: 5 })) }, "/h"), "/h/studio/work/.ai/reports");
 });
+
+test("loadDev is off with no dev command", () => {
+  assert.equal(loadDev({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ repo: "/r/app" })) }, "/h"), undefined);
+});
+
+test("loadDev reads the command and applies defaults", () => {
+  const dir = dirWith(JSON.stringify({ repo: "/r/app", devCommand: ["npm", "run", "dev"] }));
+  assert.deepEqual(loadDev({ BOB_CONFIG_DIR: dir }, "/h"), {
+    command: ["npm", "run", "dev"],
+    envFile: ".env.local",
+    portMin: 4100,
+    portMax: 4199,
+    proxyPort: 8181,
+  });
+});
+
+test("loadDev reads the env file, port range, and proxy port", () => {
+  const dir = dirWith(JSON.stringify({ repo: "/r/app", devCommand: ["pnpm", "dev"], devEnvFile: ".env", devPortRange: [5000, 5010], proxyPort: 9000 }));
+  assert.deepEqual(loadDev({ BOB_CONFIG_DIR: dir }, "/h"), { command: ["pnpm", "dev"], envFile: ".env", portMin: 5000, portMax: 5010, proxyPort: 9000 });
+});
+
+for (const bad of [
+  { devCommand: "npm run dev" },
+  { devCommand: [] },
+  { devCommand: ["npm", 1] },
+  { devCommand: ["-x"] },
+  { devCommand: ["npm"], devEnvFile: "../x" },
+  { devCommand: ["npm"], devEnvFile: "a/b" },
+  { devCommand: ["npm"], devPortRange: [5, 4] },
+  { devCommand: ["npm"], devPortRange: [100, 200] },
+  { devCommand: ["npm"], devPortRange: "x" },
+  { devCommand: ["npm"], proxyPort: 0 },
+  { devCommand: ["npm"], proxyPort: 70000 },
+]) {
+  test(`loadDev is off for ${JSON.stringify(bad)}`, () => {
+    assert.equal(loadDev({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ repo: "/r/app", ...bad })) }, "/h"), undefined);
+  });
+}
