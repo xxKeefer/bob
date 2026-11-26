@@ -15,7 +15,12 @@ function dirWith(text: string | undefined): string {
 
 test("a config with a repo and a start prompt loads", () => {
   const dir = dirWith(JSON.stringify({ repo: "/r/app", startPrompt: "/go <KEY>" }));
-  assert.deepEqual(loadConfig({ BOB_CONFIG_DIR: dir }, "/h"), { ok: true, repo: "/r/app", startPrompt: "/go <KEY>" });
+  assert.deepEqual(loadConfig({ BOB_CONFIG_DIR: dir }, "/h"), {
+    ok: true,
+    repo: "/r/app",
+    startPrompt: "/go <KEY>",
+    reviewPrompt: "/engineering:review-pr <N>",
+  });
 });
 
 test("the start prompt defaults to work-on", () => {
@@ -24,7 +29,14 @@ test("the start prompt defaults to work-on", () => {
     ok: true,
     repo: "/r/app",
     startPrompt: "/engineering:work-on <KEY>",
+    reviewPrompt: "/engineering:review-pr <N>",
   });
+});
+
+test("a configured review prompt loads", () => {
+  const dir = dirWith(JSON.stringify({ repo: "/r/app", reviewPrompt: "/look <N>" }));
+  const result = loadConfig({ BOB_CONFIG_DIR: dir }, "/h");
+  assert.ok(result.ok && result.reviewPrompt === "/look <N>");
 });
 
 test("the config dir defaults to .config/bob under home", () => {
@@ -42,6 +54,8 @@ for (const [name, text] of [
   ["a relative repo", JSON.stringify({ repo: "app" })],
   ["a non-string prompt", JSON.stringify({ repo: "/r", startPrompt: 4 })],
   ["a prompt that starts with a dash", JSON.stringify({ repo: "/r", startPrompt: "--x <KEY>" })],
+  ["a review prompt that starts with a dash", JSON.stringify({ repo: "/r", reviewPrompt: "--x <N>" })],
+  ["an empty review prompt", JSON.stringify({ repo: "/r", reviewPrompt: "" })],
   ["an empty prompt", JSON.stringify({ repo: "/r", startPrompt: "" })],
 ] as const) {
   test(`${name} gives a message`, () => {

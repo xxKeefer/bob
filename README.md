@@ -40,6 +40,7 @@ To update, run `git pull` in the clone.
 | `bob` | Show the live list. It refreshes each second. Move the highlighted row with `j` and `k` or the down and up arrows. Press Enter to focus the selected session's tmux or zellij pane. Press `q` or Ctrl-C to quit. |
 | `n` | Open a new tmux or zellij pane in the selected row's folder and run `claude`. Bob sends it no text. |
 | `N` | Type a ticket key such as `ABC-123` and press Enter. Bob runs `wt switch --create` in your repo, opens a tmux window or zellij pane in the new worktree, and runs `claude` with the start prompt. Esc cancels. |
+| `v` | Type a PR number such as `27` and press Enter. Bob runs `gh pr view <n> --json headRefName` in your repo, runs `wt switch <branch>`, opens a tmux window or zellij pane in that worktree, and runs `claude` with the review prompt. The row shows `review` before its folder and sorts after ticket rows of the same status. Bob posts nothing to GitHub. Esc cancels. |
 | `x` | Clean up the selected row after its PR merged. Bob asks y/N in the view. On `y` it re-checks with `gh pr view` that the PR is merged, runs `wt remove <branch>` in your configured repo, closes the row's tmux window (`kill-window`) or zellij pane (`close-pane`), and deletes the row. If the PR is not merged, or Bob cannot prove it, Bob shows a message and does nothing. Any key but `y` cancels. |
 | `bob new <KEY>` | Do the same as `N` outside the view. |
 | `bob --once` | Print one frame and exit. It reads no key. |
@@ -54,10 +55,10 @@ To update, run `git pull` in the clone.
 `~/.config/bob/config.json` (set `BOB_CONFIG_DIR` to move it):
 
 ```json
-{ "repo": "/home/me/code/app", "startPrompt": "/engineering:work-on <KEY>" }
+{ "repo": "/home/me/code/app", "startPrompt": "/engineering:work-on <KEY>", "reviewPrompt": "/engineering:review-pr <N>" }
 ```
 
-`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. Bob finds the ticket on a row through the worktree folder name.
+`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. `reviewPrompt` is optional; `<N>` becomes the PR number. Bob marks a review row by saving the worktree folder in `reviews.json` in the state folder. Bob finds the ticket on a row through the worktree folder name.
 
 ## Bob in a layout pane
 

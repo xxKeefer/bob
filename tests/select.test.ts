@@ -8,7 +8,7 @@ import type { Row } from "../src/rows.ts";
 const IDS = ["a", "b", "c"];
 
 function row(sessionId: string): Row {
-  return { sessionId, cwd: `/w/${sessionId}`, status: "idle", since: 100, updated: 100, reason: "", context: undefined, multiplexer: "", muxSession: "", paneId: "" };
+  return { sessionId, cwd: `/w/${sessionId}`, status: "idle", since: 100, updated: 100, reason: "", context: undefined, multiplexer: "", muxSession: "", paneId: "", review: false };
 }
 
 test("the first row is selected at start", () => {
@@ -82,4 +82,8 @@ test("parseKeys reads N as the ticket key", () => {
 
 test("parseKeys reads x as the clean key", () => {
   assert.deepEqual(parseKeys("x"), ["clean"]);
+});
+
+test("parseKeys reads v as review", () => {
+  assert.deepEqual(parseKeys("v"), ["review"]);
 });

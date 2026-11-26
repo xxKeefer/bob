@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -533,4 +533,41 @@ test("x on a row whose PR is not merged is refused and asks nothing", async () =
   assert.deepEqual(calls, []);
   assert.deepEqual(captured, []);
   assert.equal(rowCount(dir), 2);
+});
+
+test("v prompts for a PR number, Enter opens the review window, and the folder is marked", async () => {
+  const cfg = mkdtempSync(join(tmpdir(), "bob-cfg-"));
+  writeFileSync(join(cfg, "config.json"), JSON.stringify({ repo: "/r/app" }));
+  const calls: string[][] = [];
+
+  const capture: Capture = (argv) => {
+    if (argv[0] === "gh") return { ok: true, stdout: JSON.stringify({ headRefName: "feat/x" }) };
+
+    return { ok: true, stdout: argv[1] === "list" ? JSON.stringify([{ branch: "feat/x", path: "/r/app.x" }]) : "" };
+  };
+
+  const dir = seededPanes();
+  const { input, frames, done } = jump(dir, (argv) => (calls.push(argv), { ok: true }), { TMUX: "x", BOB_CONFIG_DIR: cfg }, capture);
+  input.emit("data", Buffer.from("v"));
+  input.emit("data", Buffer.from("27"));
+  assert.ok(frames.at(-1)?.includes("review PR: 27"));
+  input.emit("data", Buffer.from("\r"));
+  await sleepMs(60);
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, [["tmux", "new-window", "-c", "/r/app.x", "claude", "/engineering:review-pr 27"]]);
+  assert.deepEqual(JSON.parse(readFileSync(join(dir, "reviews.json"), "utf8")), ["/r/app.x"]);
+});
+
+test("a bad PR number shows the message and runs nothing", async () => {
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  input.emit("data", Buffer.from("v"));
+  input.emit("data", Buffer.from("1;id\r"));
+  await sleepMs(60);
+  const last = frames.at(-1) ?? "";
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+  assert.ok(last.includes("PR number"));
 });

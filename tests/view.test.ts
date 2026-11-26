@@ -9,7 +9,7 @@ import { draw, drawUnreadable, install, isLinked, main } from "../src/view.ts";
 import type { Row } from "../src/rows.ts";
 
 function row(extra: Partial<Row>): Row {
-  return { sessionId: "s", cwd: "/home/u/proj", status: "idle", since: 100, updated: 100, reason: "", context: undefined, multiplexer: "", muxSession: "", paneId: "", ...extra };
+  return { sessionId: "s", cwd: "/home/u/proj", status: "idle", since: 100, updated: 100, reason: "", context: undefined, multiplexer: "", muxSession: "", paneId: "", review: false, ...extra };
 }
 
 test("draw shows status, age, folder name, and reason", () => {
@@ -484,4 +484,10 @@ test("main with once makes no PR call", async () => {
 
   await main({ stateDir: dir, once: true, intervalMs: 5, width: 80, now: () => 200, write: () => {}, signal: new AbortController().signal, exec });
   assert.equal(calls, 0);
+});
+
+test("draw marks a review row in the folder column", () => {
+  const text = draw([row({ cwd: "/a/ticket" }), row({ cwd: "/a/pr", review: true })], 200, 120).join("\n");
+  assert.match(text, /review pr/);
+  assert.doesNotMatch(text, /review ticket/);
 });
