@@ -1,4 +1,4 @@
-export const KEY = { up: "up", down: "down", quit: "quit", enter: "enter", new: "new", ticket: "ticket" } as const;
+export const KEY = { up: "up", down: "down", quit: "quit", enter: "enter", new: "new", ticket: "ticket", clean: "clean" } as const;
 
 export type Key = (typeof KEY)[keyof typeof KEY];
 
@@ -21,6 +21,7 @@ const SEQUENCES: readonly { sequence: string; key: Key }[] = [
   { sequence: "\n", key: KEY.enter },
   { sequence: "n", key: KEY.new },
   { sequence: "N", key: KEY.ticket },
+  { sequence: "x", key: KEY.clean },
   { sequence: "q", key: KEY.quit },
   { sequence: "\x03", key: KEY.quit },
 ];

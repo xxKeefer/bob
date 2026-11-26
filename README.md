@@ -40,6 +40,7 @@ To update, run `git pull` in the clone.
 | `bob` | Show the live list. It refreshes each second. Move the highlighted row with `j` and `k` or the down and up arrows. Press Enter to focus the selected session's tmux or zellij pane. Press `q` or Ctrl-C to quit. |
 | `n` | Open a new tmux or zellij pane in the selected row's folder and run `claude`. Bob sends it no text. |
 | `N` | Type a ticket key such as `ABC-123` and press Enter. Bob runs `wt switch --create` in your repo, opens a tmux window or zellij pane in the new worktree, and runs `claude` with the start prompt. Esc cancels. |
+| `x` | Clean up the selected row after its PR merged. Bob asks y/N in the view. On `y` it re-checks with `gh pr view` that the PR is merged, runs `wt remove <branch>` in your configured repo, closes the row's tmux window (`kill-window`) or zellij pane (`close-pane`), and deletes the row. If the PR is not merged, or Bob cannot prove it, Bob shows a message and does nothing. Any key but `y` cancels. |
 | `bob new <KEY>` | Do the same as `N` outside the view. |
 | `bob --once` | Print one frame and exit. It reads no key. |
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
@@ -92,7 +93,7 @@ Colour shows only on a terminal. Set `NO_COLOR` to turn it off.
 - Set `BOB_STATE_DIR` to an absolute path to use another folder.
 - The hook exits 0 on any error, so it never blocks Claude.
 - The hook deletes a row on `SessionEnd`. A session that dies with no `SessionEnd` leaves a row that goes stale and sorts last.
-- `bob prune` is the one command that deletes rows on your say-so. Plain `bob`, `bob --once`, and `bob demo` write nothing.
+- `bob prune` and the `x` key are the writes that delete rows on your say-so. `x` also removes a worktree and closes a window, and only for a merged PR. Plain `bob`, `bob --once`, and `bob demo` write nothing.
 
 ## Develop
 
