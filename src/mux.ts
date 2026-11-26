@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { isAbsolute } from "node:path";
 import { Multiplexers } from "./multiplexer.ts";
 import type { Multiplexer } from "./multiplexer.ts";
 
@@ -59,6 +60,22 @@ export function focus(multiplexer: Multiplexer, session: string, pane: string, r
     if (multiplexer === Multiplexers.zellij) return focusZellij(session, pane, run);
 
     return { ok: false, message: "no multiplexer for this session" };
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export function open(env: Record<string, string | undefined>, cwd: string, run: Run): RunResult {
+  if (!isAbsolute(cwd)) return { ok: false, message: "no folder for this row" };
+
+  let argv: string[];
+
+  if (env.ZELLIJ !== undefined) argv = ["zellij", "action", "new-pane", "--cwd", cwd, "--", "claude"];
+  else if (env.TMUX !== undefined) argv = ["tmux", "split-window", "-c", cwd, "claude"];
+  else return { ok: false, message: "launch needs tmux or zellij" };
+
+  try {
+    return run(argv);
   } catch (error) {
     return { ok: false, message: error instanceof Error ? error.message : String(error) };
   }

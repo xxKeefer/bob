@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { focus, realRun } from "../src/mux.ts";
+import { focus, open, realRun } from "../src/mux.ts";
 import type { RunResult } from "../src/mux.ts";
 
 function recorder(result: RunResult = { ok: true }) {
@@ -127,4 +127,54 @@ test("realRun gives a non-empty timeout reason for a command that outlives the t
   const message = result.ok ? "" : result.message;
   assert.notEqual(message, "");
   assert.notEqual(message, "exited with null");
+});
+
+test("tmux open splits a pane in the folder running claude", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(open({ TMUX: "/tmp/tmux-1/default,1,0" }, "/w/a", run), { ok: true });
+  assert.deepEqual(calls, [["tmux", "split-window", "-c", "/w/a", "claude"]]);
+});
+
+test("zellij open makes a pane in the folder running claude", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(open({ ZELLIJ: "0" }, "/w/a", run), { ok: true });
+  assert.deepEqual(calls, [["zellij", "action", "new-pane", "--cwd", "/w/a", "--", "claude"]]);
+});
+
+test("zellij wins when tmux and zellij are both set", () => {
+  const { calls, run } = recorder();
+  open({ TMUX: "x", ZELLIJ: "0" }, "/w/a", run);
+  assert.equal(calls[0]?.[0], "zellij");
+});
+
+test("open with no multiplexer gives the message and runs no command", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(open({}, "/w/a", run), { ok: false, message: "launch needs tmux or zellij" });
+  assert.deepEqual(calls, []);
+});
+
+for (const cwd of ["", "relative", "-x"]) {
+  test(`open with folder ${JSON.stringify(cwd)} runs no command`, () => {
+    const { calls, run } = recorder();
+    assert.deepEqual(open({ TMUX: "x" }, cwd, run), { ok: false, message: "no folder for this row" });
+    assert.deepEqual(calls, []);
+  });
+}
+
+test("open sends no input to any pane", () => {
+  for (const env of [{ TMUX: "x" }, { ZELLIJ: "0" }]) {
+    const { calls, run } = recorder();
+    open(env, "/w/a", run);
+    assert.ok(!calls.flat().some((arg) => /send-keys|write-chars|write|paste/.test(arg)));
+  }
+});
+
+test("open gives the failure reason, and a thrown runner does not escape", () => {
+  assert.deepEqual(open({ TMUX: "x" }, "/w/a", () => ({ ok: false, message: "boom" })), { ok: false, message: "boom" });
+
+  const result = open({ TMUX: "x" }, "/w/a", () => {
+    throw new Error("spawn tmux ENOENT");
+  });
+
+  assert.deepEqual(result, { ok: false, message: "spawn tmux ENOENT" });
 });
