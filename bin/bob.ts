@@ -95,6 +95,17 @@ else if (command === "prune") {
     writeError: (text) => process.stderr.write(text),
   });
 }
+else if (command === "new") {
+  const { newTicket } = await import("../src/ticket.ts");
+  const { realCapture, realRun } = await import("../src/mux.ts");
+  const result = newTicket(process.argv[3] ?? "", process.env, homedir(), realRun, realCapture);
+
+  if (result.ok) process.stdout.write(`started ${process.argv[3]}\n`);
+  else {
+    process.stderr.write(`${result.message}\n`);
+    process.exitCode = 1;
+  }
+}
 else if (command === "demo" || command === "-d") {
   const { demo } = await import("../src/demo.ts");
 

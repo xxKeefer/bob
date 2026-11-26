@@ -74,3 +74,8 @@ test("parseKeys reads the move and quit keys", () => {
   assert.deepEqual(parseKeys("jn"), ["down", "new"]);
   assert.deepEqual(parseKeys("\u001bOA\u001bOB\n"), ["up", "down", "enter"]);
 });
+
+test("parseKeys reads N as the ticket key", () => {
+  assert.deepEqual(parseKeys("N"), ["ticket"]);
+  assert.deepEqual(parseKeys("n"), ["new"]);
+});

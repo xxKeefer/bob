@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readdirSync, statSync } from "node:fs";
+import { mkdtempSync, readdirSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
 import { main } from "../src/view.ts";
-import type { RunResult } from "../src/mux.ts";
+import type { Capture, RunResult } from "../src/mux.ts";
 import type { Input } from "../src/view.ts";
 
 const bin = join(import.meta.dirname, "..", "bin", "bob.ts");
@@ -159,7 +159,7 @@ function seededPanes(): string {
   return dir;
 }
 
-function jump(dir: string, run: (argv: string[]) => RunResult, env: Record<string, string> = {}) {
+function jump(dir: string, run: (argv: string[]) => RunResult, env: Record<string, string> = {}, capture?: Capture) {
   const input = new FakeInput(true);
   const frames: string[] = [];
 
@@ -174,6 +174,7 @@ function jump(dir: string, run: (argv: string[]) => RunResult, env: Record<strin
     input,
     run,
     env,
+    capture,
   });
 
   return { input, frames, done };
@@ -382,4 +383,69 @@ test("a failed launch shows the error and Bob keeps refreshing", async () => {
 test("the launch message clears after the next key", async () => {
   const last = await press(["n", "j"], seededPanes(), () => ({ ok: true }), {});
   assert.ok(!last.some((line) => line.includes("launch needs")));
+});
+
+test("N prompts for a key, Enter runs newTicket's commands, and the window opens", async () => {
+  const cfg = mkdtempSync(join(tmpdir(), "bob-cfg-"));
+  writeFileSync(join(cfg, "config.json"), JSON.stringify({ repo: "/r/app" }));
+  const calls: string[][] = [];
+  const capture: Capture = (argv) => ({ ok: true, stdout: argv[1] === "list" ? JSON.stringify([{ branch: "ABC-1", path: "/r/app.ABC-1" }]) : "" });
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x", BOB_CONFIG_DIR: cfg }, capture);
+  input.emit("data", Buffer.from("N"));
+  input.emit("data", Buffer.from("AB"));
+  input.emit("data", Buffer.from("C-1x"));
+  input.emit("data", Buffer.from("\x7f"));
+  assert.ok(frames.at(-1)?.includes("ticket: ABC-1"));
+  input.emit("data", Buffer.from("\r"));
+  await sleepMs(60);
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, [["tmux", "new-window", "-c", "/r/app.ABC-1", "claude", "/engineering:work-on ABC-1"]]);
+});
+
+test("Escape cancels the prompt and runs nothing; j is text while prompting", async () => {
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  input.emit("data", Buffer.from("N"));
+  input.emit("data", Buffer.from("j"));
+  assert.ok(frames.at(-1)?.includes("ticket: j"));
+  input.emit("data", Buffer.from("\x1b"));
+  assert.ok(!frames.at(-1)?.includes("ticket:"));
+  input.emit("data", Buffer.from("N"));
+  input.emit("data", Buffer.from("\r"));
+  await sleepMs(30);
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+});
+
+test("a bad key shows the message and runs nothing", async () => {
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(seededPanes(), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  input.emit("data", Buffer.from("N"));
+  input.emit("data", Buffer.from("bad;id\r"));
+  await sleepMs(60);
+  const last = frames.at(-1) ?? "";
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+  assert.ok(last.includes("ticket key"));
+});
+
+test("n still opens a pane beside the selected row", async () => {
+  const calls: string[][] = [];
+  await press(["n"], seededPanes(), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  assert.deepEqual(calls, [["tmux", "split-window", "-c", "/w/a", "claude"]]);
+});
+
+test("bob new with a bad key exits 1 and names the problem", () => {
+  const result = spawnSync("node", [bin, "new", "bad;id"], { encoding: "utf8", env: { ...process.env, BOB_CONFIG_DIR: "/nonexistent-bob" } });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /ticket key/);
+});
+
+test("bob new with no config exits 1", () => {
+  const result = spawnSync("node", [bin, "new", "ABC-1"], { encoding: "utf8", env: { ...process.env, BOB_CONFIG_DIR: "/nonexistent-bob" } });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /config/);
 });

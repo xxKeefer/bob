@@ -1,12 +1,13 @@
 import { accessSync, constants, realpathSync, statSync } from "node:fs";
+import { homedir } from "node:os";
 import { basename, delimiter, isAbsolute, join } from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import { EVENTS } from "./hook.ts";
 import { attachKeys, KEY } from "./keys.ts";
 import type { Key } from "./keys.ts";
 import type { KeyInput } from "./keys.ts";
-import { focus, open, realRun } from "./mux.ts";
-import type { Run } from "./mux.ts";
+import { focus, open, realCapture, realRun } from "./mux.ts";
+import type { Capture, Run } from "./mux.ts";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
 import { move, reconcile, START } from "./select.ts";
@@ -27,6 +28,7 @@ export interface MainOptions {
   signal: AbortSignal;
   input?: Input;
   run?: Run;
+  capture?: Capture;
   env?: Record<string, string | undefined>;
 }
 
@@ -49,6 +51,7 @@ function clean(value: string): string {
   return value.replace(CONTROL_WHITESPACE, " ").replace(CONTROL_CHARACTERS, "");
 }
 
+const MAX_PROMPT = 40;
 const CLEAR = "\x1b[H\x1b[2J";
 const DIM = "2";
 const REASON_COLOR = "33";
@@ -233,6 +236,7 @@ export async function main(options: MainOptions): Promise<void> {
   let failure: Error | undefined;
   let now = options.now();
   let message = "";
+  let prompt: string | undefined;
 
   const render = () => {
     const lines =
@@ -242,10 +246,50 @@ export async function main(options: MainOptions): Promise<void> {
 
     if (message !== "") lines.push(clean(message).slice(0, options.width));
 
+    if (prompt !== undefined) lines.push(`ticket: ${clean(prompt)}`.slice(0, options.width));
+
     options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
   };
 
   const ids = () => rows.map((row) => row.sessionId);
+
+  const start = (key: string) => {
+    message = `starting ${clean(key)}...`;
+    render();
+
+    void import("./ticket.ts").then(({ newTicket }) => {
+      const result = newTicket(key, options.env ?? process.env, homedir(), options.run ?? realRun, options.capture ?? realCapture);
+
+      message = result.ok ? "" : result.message;
+      render();
+    });
+  };
+
+  const capturePrompt = (text: string): boolean => {
+    if (prompt === undefined) return false;
+
+    if (text === "\x1b" || text === "\x03") {
+      prompt = undefined;
+      message = "";
+    } else if (!text.startsWith("\x1b")) {
+      for (const char of text) {
+        if (char === "\r" || char === "\n") {
+          const key = prompt;
+
+          prompt = undefined;
+          start(key);
+          break;
+        }
+
+        if (char === "\x7f" || char === "\b") prompt = prompt.slice(0, -1);
+        else if (char >= " " && char <= "~" && prompt.length < MAX_PROMPT) prompt += char;
+      }
+    }
+
+    render();
+
+    return true;
+  };
 
   const onKeys = (keys: Key[]) => {
     for (const key of keys) {
@@ -259,6 +303,12 @@ export async function main(options: MainOptions): Promise<void> {
         const result = focus(row.multiplexer, row.muxSession, row.paneId, options.run ?? realRun);
 
         message = result.ok ? "" : result.message;
+        continue;
+      }
+
+      if (key === KEY.ticket) {
+        prompt = "";
+        message = "";
         continue;
       }
 
@@ -287,7 +337,7 @@ export async function main(options: MainOptions): Promise<void> {
 
   if (options.signal.aborted) abort();
 
-  const detach = readsKeys ? attachKeys(input, onKeys) : undefined;
+  const detach = readsKeys ? attachKeys(input, onKeys, capturePrompt) : undefined;
 
   try {
     while (!local.signal.aborted) {
