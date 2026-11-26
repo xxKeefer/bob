@@ -3,10 +3,8 @@ import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { isAbsolute, join } from "node:path";
-import { demo } from "../src/demo.ts";
+import type { demo } from "../src/demo.ts";
 import { handle } from "../src/hook.ts";
-import { writeSettings } from "../src/install.ts";
-import { hookCommand, install, installHint, isLinked, main } from "../src/view.ts";
 
 function stateDir(): string | undefined {
   const override = process.env.BOB_STATE_DIR;
@@ -54,7 +52,11 @@ async function runView(once: boolean, run: typeof demo | undefined): Promise<voi
     input: process.stdin,
   };
 
-  if (run === undefined) await main({ ...options, stateDir: stateDir() });
+  if (run === undefined) {
+    const { main } = await import("../src/view.ts");
+
+    await main({ ...options, stateDir: stateDir() });
+  }
   else await run(options);
 }
 
@@ -62,6 +64,8 @@ const command = process.argv[2];
 
 if (command === "hook") runHook();
 else if (command === "install") {
+  const { writeSettings } = await import("../src/install.ts");
+  const { hookCommand, install, installHint, isLinked } = await import("../src/view.ts");
   const script = join(import.meta.dirname, "..", "bin", "bob.ts");
 
   if (process.argv[3] === "--write") {
@@ -79,5 +83,9 @@ else if (command === "install") {
     if (!isLinked(script)) process.stderr.write(installHint(script));
   }
 }
-else if (command === "demo" || command === "-d") await runView(process.argv[3] === "--once", demo);
+else if (command === "demo" || command === "-d") {
+  const { demo } = await import("../src/demo.ts");
+
+  await runView(process.argv[3] === "--once", demo);
+}
 else if (command === undefined || command === "--once") await runView(command === "--once", undefined);
