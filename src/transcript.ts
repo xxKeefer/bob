@@ -40,6 +40,18 @@ function parseUsage(line: string): Usage | undefined {
   }
 }
 
+export function readMtime(path: string): number | undefined {
+  if (path === "") return undefined;
+
+  try {
+    const stat = statSync(path);
+
+    return stat.isFile() ? stat.mtimeMs / 1000 : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function readUsage(path: string): Usage | undefined {
   if (path === "") return undefined;
 

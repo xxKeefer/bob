@@ -4,10 +4,11 @@ import { DatabaseSync } from "node:sqlite";
 import { readReviews } from "./reviews.ts";
 import { toMultiplexer } from "./multiplexer.ts";
 import type { Multiplexer } from "./multiplexer.ts";
-import { readUsage } from "./transcript.ts";
+import { readMtime, readUsage } from "./transcript.ts";
 import type { Usage } from "./transcript.ts";
 
 export const STALE_SECONDS = 3600;
+export const DEFAULT_STUCK_SECONDS = 300;
 const BUSY_TIMEOUT_MS = 200;
 
 export interface Row {
@@ -26,16 +27,17 @@ export interface Row {
 
 const RANK = new Map([
   ["waiting", 0],
-  ["busy", 1],
-  ["idle", 2],
-  ["stale", 3],
+  ["stuck", 1],
+  ["busy", 2],
+  ["idle", 3],
+  ["stale", 4],
 ]);
 
 function rank(status: string): number {
   return RANK.get(status) ?? RANK.size;
 }
 
-export function loadRows(stateDir: string, now: number, onError?: (error: Error) => void): Row[] {
+export function loadRows(stateDir: string, now: number, onError?: (error: Error) => void, stuckSeconds = DEFAULT_STUCK_SECONDS): Row[] {
   const file = join(stateDir, "bob.db");
 
   if (!existsSync(file)) return [];
@@ -61,7 +63,14 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
       return found
         .map((row) => {
           const updated = Number(row.updated);
-          const status = now - updated >= STALE_SECONDS ? "stale" : String(row.status);
+          const transcript = String(row.transcript_path);
+          let status = now - updated >= STALE_SECONDS ? "stale" : String(row.status);
+
+          if (status === "busy") {
+            const mtime = readMtime(transcript);
+
+            if (mtime !== undefined && now - mtime >= stuckSeconds) status = "stuck";
+          }
 
           return {
             sessionId: String(row.session_id),
@@ -70,7 +79,7 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
             since: Number(row.since),
             updated,
             reason: String(row.reason),
-            context: readUsage(String(row.transcript_path)),
+            context: readUsage(transcript),
             multiplexer: toMultiplexer(String(row.multiplexer)),
             muxSession: String(row.mux_session),
             paneId: String(row.pane_id),

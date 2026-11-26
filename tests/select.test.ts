@@ -87,3 +87,7 @@ test("parseKeys reads x as the clean key", () => {
 test("parseKeys reads v as review", () => {
   assert.deepEqual(parseKeys("v"), ["review"]);
 });
+
+test("parseKeys reads r as restart", () => {
+  assert.deepEqual(parseKeys("r"), ["restart"]);
+});

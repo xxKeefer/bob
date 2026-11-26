@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
-import { existsSync, mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import { test } from "node:test";
 import { handle } from "../src/hook.ts";
-import { loadRows, STALE_SECONDS } from "../src/rows.ts";
+import { DEFAULT_STUCK_SECONDS, loadRows, STALE_SECONDS } from "../src/rows.ts";
 
 function tempDir(): string {
   return mkdtempSync(join(tmpdir(), "bob-rows-"));
@@ -202,4 +202,36 @@ test("an unknown stored multiplexer loads as empty", () => {
   db.close();
   const [row] = loadRows(dir, 150);
   assert.equal(row?.multiplexer, "");
+});
+
+function transcriptAt(mtime: number): string {
+  const file = join(tempDir(), "t.jsonl");
+  writeFileSync(file, "{}\n");
+  utimesSync(file, mtime, mtime);
+
+  return file;
+}
+
+test("a busy row whose transcript is older than the stuck time is stuck", () => {
+  const dir = tempDir();
+  send(dir, "UserPromptSubmit", "a", 100, { transcript_path: transcriptAt(100) });
+  const [row] = loadRows(dir, 500, undefined, 300);
+  assert.equal(row?.status, "stuck");
+});
+
+test("a busy row with a fresh transcript, no transcript, or a lower stuck time than its age stays busy", () => {
+  const dir = tempDir();
+  send(dir, "UserPromptSubmit", "fresh", 100, { transcript_path: transcriptAt(450) });
+  send(dir, "UserPromptSubmit", "none", 100);
+  const rows = loadRows(dir, 500, undefined, 300);
+  assert.deepEqual(rows.map((row) => row.status), ["busy", "busy"]);
+});
+
+test("only busy rows turn stuck, and the default stuck time is 300 seconds", () => {
+  assert.equal(DEFAULT_STUCK_SECONDS, 300);
+  const dir = tempDir();
+  send(dir, "SessionStart", "idle", 100, { transcript_path: transcriptAt(100) });
+  send(dir, "UserPromptSubmit", "busy", 100, { transcript_path: transcriptAt(100) });
+  const rows = loadRows(dir, 500);
+  assert.deepEqual(rows.map((row) => [row.sessionId, row.status]), [["busy", "stuck"], ["idle", "idle"]]);
 });

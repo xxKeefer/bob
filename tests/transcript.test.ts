@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -41,4 +41,14 @@ test("readUsage reads only the end of a large file and survives a cut first line
   const filler = JSON.stringify({ type: "user", text: "x".repeat(1000) });
   const file = transcript([...Array.from({ length: 2000 }, () => filler), entry("claude-haiku-5-5", 1, 1, 1)]);
   assert.deepEqual(readUsage(file), { tokens: 3, model: "claude-haiku-5-5" });
+});
+
+test("readMtime returns the file mtime in seconds, and undefined for no file", async () => {
+  const { readMtime } = await import("../src/transcript.ts");
+  const file = join(mkdtempSync(join(tmpdir(), "bob-mtime-")), "t.jsonl");
+  writeFileSync(file, "{}\n");
+  utimesSync(file, 500, 500);
+  assert.equal(readMtime(file), 500);
+  assert.equal(readMtime(""), undefined);
+  assert.equal(readMtime(join(tmpdir(), "bob-no-such-file")), undefined);
 });

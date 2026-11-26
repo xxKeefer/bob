@@ -42,6 +42,7 @@ To update, run `git pull` in the clone.
 | `N` | Type a ticket key such as `ABC-123` and press Enter. Bob runs `wt switch --create` in your repo, opens a tmux window or zellij pane in the new worktree, and runs `claude` with the start prompt. Esc cancels. |
 | `v` | Type a PR number such as `27` and press Enter. Bob runs `gh pr view <n> --json headRefName` in your repo, runs `wt switch <branch>`, opens a tmux window or zellij pane in that worktree, and runs `claude` with the review prompt. The row shows `review` before its folder and sorts after ticket rows of the same status. Bob posts nothing to GitHub. Esc cancels. |
 | `x` | Clean up the selected row after its PR merged. Bob asks y/N in the view. On `y` it re-checks with `gh pr view` that the PR is merged, runs `wt remove <branch>` in your configured repo, closes the row's tmux window (`kill-window`) or zellij pane (`close-pane`), and deletes the row. If the PR is not merged, or Bob cannot prove it, Bob shows a message and does nothing. Any key but `y` cancels. |
+| `r` | Restart a stuck row. In tmux, Bob runs `tmux respawn-pane -k -t <pane> -c <folder> claude --continue`, which kills the pane process and resumes the same conversation in the same pane. On a row that is not stuck, Bob shows a message and does nothing. zellij has no clean equivalent of `respawn-pane`, so in zellij Bob shows `restart not supported in zellij`. |
 | `bob new <KEY>` | Do the same as `N` outside the view. |
 | `bob --once` | Print one frame and exit. It reads no key. |
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
@@ -58,7 +59,7 @@ To update, run `git pull` in the clone.
 { "repo": "/home/me/code/app", "startPrompt": "/engineering:work-on <KEY>", "reviewPrompt": "/engineering:review-pr <N>" }
 ```
 
-`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. `reviewPrompt` is optional; `<N>` becomes the PR number. Bob marks a review row by saving the worktree folder in `reviews.json` in the state folder. Bob finds the ticket on a row through the worktree folder name.
+`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. `reviewPrompt` is optional; `<N>` becomes the PR number. `stuckSeconds` is optional, a positive number, default 300; see stuck below. Bob marks a review row by saving the worktree folder in `reviews.json` in the state folder. Bob finds the ticket on a row through the worktree folder name.
 
 ## Bob in a layout pane
 
@@ -73,13 +74,14 @@ Press Enter in Bob to focus a session's pane. Press `n` to open a new Claude pan
 
 ## How to read the list
 
-Rows sort waiting first (longest wait on top), then busy, then idle, then stale.
+Rows sort waiting first (longest wait on top), then stuck, then busy, then idle, then stale.
 
 | Icon | Status | Meaning |
 | --- | --- | --- |
 | `◆` | waiting | Claude waits on you. The reason is the `Notification` message. |
 | `●` | busy | A turn runs. |
 | `○` | idle | The turn ended. |
+| `■` | stuck | A busy row whose transcript file has not changed for `stuckSeconds` (default 300). Press `r` to restart it. A busy row with no readable transcript never shows stuck. |
 | `◌` | stale | No update for 3600 seconds. |
 
 The context bar has 8 cells. 300k tokens fills it, and the percentage is tokens divided by 300k. The colour follows the token count: green below 100k, yellow below 200k, amber below 300k, red above. Bob reads the token count and the model from the last entry of the session transcript.

@@ -9,7 +9,7 @@ import type { KeyInput } from "./keys.ts";
 import { focus, open, realCapture, realRun } from "./mux.ts";
 import type { Capture, Run } from "./mux.ts";
 import type { Exec, PrCache, PrInfo } from "./pr.ts";
-import { loadRows } from "./rows.ts";
+import { DEFAULT_STUCK_SECONDS, loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
 import { move, reconcile, START } from "./select.ts";
 import type { Selection } from "./select.ts";
@@ -61,6 +61,7 @@ const REASON_COLOR = "33";
 
 const STATUS_COLOR = new Map([
   ["waiting", "1;33"],
+  ["stuck", "31"],
   ["busy", "32"],
   ["idle", "36"],
   ["stale", DIM],
@@ -68,6 +69,7 @@ const STATUS_COLOR = new Map([
 
 const STATUS_ICON = new Map([
   ["waiting", "\u25c6"],
+  ["stuck", "\u25a0"],
   ["busy", "\u25cf"],
   ["idle", "\u25cb"],
   ["stale", "\u25cc"],
@@ -292,6 +294,7 @@ export async function main(options: MainOptions): Promise<void> {
   let confirming: Row | undefined;
   let prCache: PrCache | undefined;
   let prs = new Map<string, PrInfo>();
+  let stuckSeconds = DEFAULT_STUCK_SECONDS;
 
   const render = () => {
     const lines =
@@ -448,6 +451,29 @@ export async function main(options: MainOptions): Promise<void> {
         continue;
       }
 
+      if (key === KEY.restart) {
+        const row = rows.find((candidate) => candidate.sessionId === selection.id);
+
+        if (row === undefined) continue;
+
+        if (row.status !== "stuck") {
+          message = "session is not stuck, nothing restarted";
+          continue;
+        }
+
+        message = `restarting ${clean(basename(row.cwd))}...`;
+        render();
+
+        void import("./restart.ts").then(({ restart }) => {
+          const result = restart(row.multiplexer, row.muxSession, row.paneId, row.cwd, options.run ?? realRun);
+
+          message = result.ok ? "" : result.message;
+          render();
+        });
+
+        continue;
+      }
+
       if (key === KEY.new) {
         const row = rows.find((candidate) => candidate.sessionId === selection.id);
 
@@ -476,6 +502,12 @@ export async function main(options: MainOptions): Promise<void> {
   const detach = readsKeys ? attachKeys(input, onKeys, capturePrompt) : undefined;
 
   try {
+    const loaded = import("./config.ts").then(({ loadStuckSeconds }) => {
+      stuckSeconds = loadStuckSeconds(options.env ?? process.env, homedir());
+    });
+
+    if (options.once) await loaded;
+
     if (!options.once) {
       void import("./pr.ts").then(({ createPrCache, realExec }) => {
         prCache = createPrCache({ exec: options.exec ?? realExec, now: options.now });
@@ -486,7 +518,7 @@ export async function main(options: MainOptions): Promise<void> {
       now = options.now();
       const errors: Error[] = [];
 
-      rows = options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error));
+      rows = options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error), stuckSeconds);
       failure = errors[0];
       prs = new Map();
 
