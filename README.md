@@ -25,6 +25,19 @@ Bob sends no input to a session. It edits no Claude file unless you run `bob ins
 
 The installer needs Node 26 and refuses to run without it. It does not embed Node, so the goal of running on a machine with no Node is not met, by design: see `docs/decisions/installer.md`. Build the tarball with `sh scripts/build-release.sh`.
 
+## Install as a Claude Code plugin
+
+The plugin declares the five hooks for you, so Bob never edits `~/.claude/settings.json`.
+
+1. Install the `bob` command with a release (`install.sh`, above) and check `command -v bob`. The plugin runs `bob hook`, so `bob` must be on `PATH`.
+2. In Claude Code, add the marketplace: `/plugin marketplace add xxKeefer/bob`
+3. Install the plugin: `/plugin install bob@bob`
+4. Start a new Claude session, then run `bob`.
+
+`bob install` stays for users with no plugin.
+
+Do not use both. The plugin and `bob install --write` each register the same five hooks, so each event would run `bob hook` twice. To avoid it, use one. If you ran `bob install --write` before, remove the `bob hook` entries from `~/.claude/settings.json` (the `.bak-*` file next to it holds the old copy), or skip the plugin.
+
 ## Install from source
 
 1. Clone the repo: `git clone git@github.com:xxKeefer/bob.git ~/code/bob`
