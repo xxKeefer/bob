@@ -83,6 +83,18 @@ else if (command === "install") {
     if (!isLinked(script)) process.stderr.write(installHint(script));
   }
 }
+else if (command === "prune") {
+  const { prune } = await import("../src/prune.ts");
+
+  process.exitCode = await prune({
+    stateDir: stateDir(),
+    now: Math.floor(Date.now() / 1000),
+    args: process.argv.slice(3),
+    input: process.stdin,
+    write: (text) => process.stdout.write(text),
+    writeError: (text) => process.stderr.write(text),
+  });
+}
 else if (command === "demo" || command === "-d") {
   const { demo } = await import("../src/demo.ts");
 

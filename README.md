@@ -43,6 +43,7 @@ To update, run `git pull` in the clone.
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
 | `bob install` | Print the hook entries Bob needs. |
 | `bob install --write` | Merge the entries into `~/.claude/settings.json`. |
+| `bob prune` | Delete rows not updated in 7 days. Bob shows the count and asks y/N first. Add `--older-than <age>` (a number and `s`, `m`, `h`, `d`, or `w`, such as `12h`) to change the age. Add `--yes` or `-y` to skip the question. |
 | `bob hook` | The hook that Claude runs. It reads the event on stdin. |
 
 ## How to read the list
@@ -65,7 +66,8 @@ Colour shows only on a terminal. Set `NO_COLOR` to turn it off.
 - The hook writes one SQLite file, `~/.local/state/bob/bob.db`, in one transaction. It writes inside no repo.
 - Set `BOB_STATE_DIR` to an absolute path to use another folder.
 - The hook exits 0 on any error, so it never blocks Claude.
-- Bob never deletes a row. A row for a dead session goes stale and sorts last.
+- The hook deletes a row on `SessionEnd`. A session that dies with no `SessionEnd` leaves a row that goes stale and sorts last.
+- `bob prune` is the one command that deletes rows on your say-so. Plain `bob`, `bob --once`, and `bob demo` write nothing.
 
 ## Develop
 
