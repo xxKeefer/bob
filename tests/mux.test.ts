@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { focus, open, openWindow, realCapture, realRun } from "../src/mux.ts";
+import { closeWindow, focus, open, openWindow, realCapture, realRun } from "../src/mux.ts";
 import type { RunResult } from "../src/mux.ts";
 
 function recorder(result: RunResult = { ok: true }) {
@@ -203,4 +203,34 @@ test("realCapture gives stdout, and a reason on failure", () => {
   assert.deepEqual(realCapture(["node", "-e", "process.stdout.write('hi')"], process.cwd()), { ok: true, stdout: "hi" });
   assert.deepEqual(realCapture(["bob-no-such-binary"], process.cwd()), { ok: false, message: "bob-no-such-binary not found" });
   assert.deepEqual(realCapture(["node", "-e", "console.error('x');process.exit(2)"], process.cwd()), { ok: false, message: "x" });
+});
+
+test("tmux closeWindow kills the window of the stored pane", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(closeWindow("tmux", "work", "%12", run), { ok: true });
+  assert.deepEqual(calls, [["tmux", "kill-window", "-t", "%12"]]);
+});
+
+test("zellij closeWindow closes the stored pane in its session", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(closeWindow("zellij", "work", "3", run), { ok: true });
+  assert.deepEqual(calls, [["zellij", "--session", "work", "action", "close-pane", "--pane-id", "3"]]);
+});
+
+test("closeWindow refuses a bad pane, a bad session, and no multiplexer", () => {
+  const { calls, run } = recorder();
+  assert.equal(closeWindow("tmux", "w", "%1; id", run).ok, false);
+  assert.equal(closeWindow("tmux", "w", "", run).ok, false);
+  assert.equal(closeWindow("zellij", "-x", "3", run).ok, false);
+  assert.equal(closeWindow("zellij", "w", "3 4", run).ok, false);
+  assert.equal(closeWindow("", "", "%1", run).ok, false);
+  assert.deepEqual(calls, []);
+});
+
+test("a thrown runner does not escape closeWindow", () => {
+  const result = closeWindow("tmux", "w", "%1", () => {
+    throw new Error("spawn tmux ENOENT");
+  });
+
+  assert.deepEqual(result, { ok: false, message: "spawn tmux ENOENT" });
 });

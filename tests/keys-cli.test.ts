@@ -449,3 +449,88 @@ test("bob new with no config exits 1", () => {
   assert.equal(result.status, 1);
   assert.match(result.stderr, /config/);
 });
+
+function cleanRun(prState: string, calls: string[][], captured: string[][]) {
+  const cfg = mkdtempSync(join(tmpdir(), "bob-cfg-"));
+  writeFileSync(join(cfg, "config.json"), JSON.stringify({ repo: "/r/app" }));
+  const dir = seededPanes();
+  const input = new FakeInput(true);
+  const frames: string[] = [];
+
+  const exec = async (argv: string[]) =>
+    argv[0] === "git" ? { ok: true as const, stdout: "feat/x\n" } : { ok: true as const, stdout: JSON.stringify({ state: prState, isDraft: false }) };
+
+  const capture: Capture = (argv) => (captured.push(argv), { ok: true, stdout: argv[0] === "git" ? "feat/x\n" : JSON.stringify({ state: prState, isDraft: false }) });
+
+  const done = main({
+    stateDir: dir,
+    once: false,
+    intervalMs: 5,
+    width: 100,
+    now: () => 1000,
+    write: (text) => frames.push(text),
+    signal: new AbortController().signal,
+    input,
+    run: (argv) => (calls.push(argv), { ok: true }),
+    env: { TMUX: "x", BOB_CONFIG_DIR: cfg },
+    capture,
+    exec,
+  });
+
+  return { input, frames, done, dir };
+}
+
+function rowCount(dir: string): number {
+  const db = new DatabaseSync(join(dir, "bob.db"));
+  const count = Number(db.prepare("select count(*) as n from sessions").get()?.n);
+  db.close();
+
+  return count;
+}
+
+test("x on a merged row asks, and y removes the worktree, closes the window, and drops the row", async () => {
+  const calls: string[][] = [];
+  const captured: string[][] = [];
+  const { input, frames, done, dir } = cleanRun("MERGED", calls, captured);
+  await sleepMs(60);
+  input.emit("data", Buffer.from("x"));
+  assert.ok(frames.at(-1)?.includes("y/N"));
+  input.emit("data", Buffer.from("y"));
+  await sleepMs(60);
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.ok(captured.some((argv) => argv.join(" ") === "wt remove feat/x"));
+  assert.deepEqual(calls, [["tmux", "kill-window", "-t", "%7"]]);
+  assert.equal(rowCount(dir), 1);
+});
+
+test("x then anything but y cancels and runs nothing", async () => {
+  const calls: string[][] = [];
+  const captured: string[][] = [];
+  const { input, frames, done, dir } = cleanRun("MERGED", calls, captured);
+  await sleepMs(60);
+  input.emit("data", Buffer.from("x"));
+  input.emit("data", Buffer.from("n"));
+  assert.ok(!frames.at(-1)?.includes("y/N"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+  assert.deepEqual(captured, []);
+  assert.equal(rowCount(dir), 2);
+});
+
+test("x on a row whose PR is not merged is refused and asks nothing", async () => {
+  const calls: string[][] = [];
+  const captured: string[][] = [];
+  const { input, frames, done, dir } = cleanRun("OPEN", calls, captured);
+  await sleepMs(60);
+  input.emit("data", Buffer.from("x"));
+  assert.ok(frames.at(-1)?.includes("not merged"));
+  assert.ok(!frames.at(-1)?.includes("y/N"));
+  input.emit("data", Buffer.from("y"));
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+  assert.deepEqual(captured, []);
+  assert.equal(rowCount(dir), 2);
+});

@@ -69,8 +69,8 @@ test("parseKeys reads the move and quit keys", () => {
   assert.deepEqual(parseKeys("\u001b[A"), ["up"]);
   assert.deepEqual(parseKeys("q"), ["quit"]);
   assert.deepEqual(parseKeys("\u0003"), ["quit"]);
-  assert.deepEqual(parseKeys("jjx\r"), ["down", "down", "enter"]);
-  assert.deepEqual(parseKeys("jjx"), ["down", "down"]);
+  assert.deepEqual(parseKeys("jjz\r"), ["down", "down", "enter"]);
+  assert.deepEqual(parseKeys("jjz"), ["down", "down"]);
   assert.deepEqual(parseKeys("jn"), ["down", "new"]);
   assert.deepEqual(parseKeys("\u001bOA\u001bOB\n"), ["up", "down", "enter"]);
 });
@@ -78,4 +78,8 @@ test("parseKeys reads the move and quit keys", () => {
 test("parseKeys reads N as the ticket key", () => {
   assert.deepEqual(parseKeys("N"), ["ticket"]);
   assert.deepEqual(parseKeys("n"), ["new"]);
+});
+
+test("parseKeys reads x as the clean key", () => {
+  assert.deepEqual(parseKeys("x"), ["clean"]);
 });

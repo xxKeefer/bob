@@ -118,3 +118,27 @@ export function openWindow(env: Record<string, string | undefined>, cwd: string,
     return { ok: false, message: error instanceof Error ? error.message : String(error) };
   }
 }
+
+export function closeWindow(multiplexer: Multiplexer, session: string, pane: string, run: Run): RunResult {
+  if (pane === "") return { ok: false, message: "no pane for this session" };
+
+  let argv: string[];
+
+  if (multiplexer === Multiplexers.tmux) {
+    if (!TMUX_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a tmux pane id" };
+
+    argv = ["tmux", "kill-window", "-t", pane];
+  } else if (multiplexer === Multiplexers.zellij) {
+    if (!ZELLIJ_PANE_ID.test(pane)) return { ok: false, message: "pane id is not a zellij pane id" };
+
+    if (!ZELLIJ_SESSION.test(session)) return { ok: false, message: "no zellij session for this session" };
+
+    argv = ["zellij", "--session", session, "action", "close-pane", "--pane-id", pane];
+  } else return { ok: false, message: "no multiplexer for this session" };
+
+  try {
+    return run(argv);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}

@@ -288,6 +288,7 @@ export async function main(options: MainOptions): Promise<void> {
   let now = options.now();
   let message = "";
   let prompt: string | undefined;
+  let confirming: Row | undefined;
   let prCache: PrCache | undefined;
   let prs = new Map<string, PrInfo>();
 
@@ -300,6 +301,8 @@ export async function main(options: MainOptions): Promise<void> {
     if (message !== "") lines.push(clean(message).slice(0, options.width));
 
     if (prompt !== undefined) lines.push(`ticket: ${clean(prompt)}`.slice(0, options.width));
+
+    if (confirming !== undefined) lines.push(`remove ${clean(basename(confirming.cwd))} and close its window? y/N`.slice(0, options.width));
 
     options.write((options.once ? "" : CLEAR) + lines.join("\n") + "\n");
   };
@@ -318,7 +321,40 @@ export async function main(options: MainOptions): Promise<void> {
     });
   };
 
+  const finish = (row: Row) => {
+    message = `removing ${clean(basename(row.cwd))}...`;
+    render();
+
+    void import("./cleanup.ts").then(({ cleanup, deleteRow }) => {
+      const result = cleanup(row, {
+        env: options.env ?? process.env,
+        home: homedir(),
+        run: options.run ?? realRun,
+        capture: options.capture ?? realCapture,
+        remove: () => {
+          if (options.stateDir !== undefined) deleteRow(options.stateDir, row.sessionId);
+        },
+      });
+
+      message = result.ok ? "" : result.message;
+      render();
+    });
+  };
+
   const capturePrompt = (text: string): boolean => {
+    if (confirming !== undefined) {
+      const row = confirming;
+
+      confirming = undefined;
+
+      if (text === "y" || text === "Y") finish(row);
+      else message = "";
+
+      render();
+
+      return true;
+    }
+
     if (prompt === undefined) return false;
 
     if (text === "\x1b" || text === "\x03") {
@@ -362,6 +398,20 @@ export async function main(options: MainOptions): Promise<void> {
       if (key === KEY.ticket) {
         prompt = "";
         message = "";
+        continue;
+      }
+
+      if (key === KEY.clean) {
+        const row = rows.find((candidate) => candidate.sessionId === selection.id);
+
+        if (row === undefined) continue;
+
+        if (prs.get(row.cwd)?.state !== "merged") message = "PR not merged, nothing removed";
+        else {
+          confirming = row;
+          message = "";
+        }
+
         continue;
       }
 
