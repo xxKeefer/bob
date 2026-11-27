@@ -6,6 +6,8 @@ import { delimiter, dirname, join } from "node:path";
 import { test } from "node:test";
 
 const root = join(import.meta.dirname, "..");
+const gnuTar = spawnSync("tar", ["--version"], { encoding: "utf8" }).stdout.includes("GNU tar");
+const skip = gnuTar ? false : "needs GNU tar for the release build";
 const version = JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version;
 
 function temp(name: string): string {
@@ -33,7 +35,7 @@ function fakeNode(): string {
   return dir;
 }
 
-test("build-release makes a tarball with a fixed file list", () => {
+test("build-release makes a tarball with a fixed file list", { skip }, () => {
   const out = temp("out");
   const result = build(out);
   assert.equal(result.status, 0, result.stderr);
@@ -50,7 +52,7 @@ test("build-release makes a tarball with a fixed file list", () => {
   assert.deepEqual(listing, sorted);
 });
 
-test("build-release is deterministic", () => {
+test("build-release is deterministic", { skip }, () => {
   const a = temp("out");
   const b = temp("out");
   assert.equal(build(a).status, 0);
@@ -61,7 +63,7 @@ test("build-release is deterministic", () => {
   );
 });
 
-test("install.sh refuses Node below 26 and writes nothing", () => {
+test("install.sh refuses Node below 26 and writes nothing", { skip }, () => {
   const out = temp("out");
   assert.equal(build(out).status, 0);
   const pkg = extract(out);
@@ -76,7 +78,7 @@ test("install.sh refuses Node below 26 and writes nothing", () => {
   assert.ok(!existsSync(bin));
 });
 
-test("install.sh refuses when node is missing", () => {
+test("install.sh refuses when node is missing", { skip }, () => {
   const out = temp("out");
   assert.equal(build(out).status, 0);
   const pkg = extract(out);
@@ -91,7 +93,7 @@ test("install.sh refuses when node is missing", () => {
   assert.match(result.stderr, /Node 26/);
 });
 
-test("install.sh installs and the linked bob runs through the symlink", () => {
+test("install.sh installs and the linked bob runs through the symlink", { skip }, () => {
   const out = temp("out");
   assert.equal(build(out).status, 0);
   const pkg = extract(out);
@@ -116,7 +118,7 @@ test("install.sh installs and the linked bob runs through the symlink", () => {
   assert.equal(spawnSync(join(bin, "bob"), ["--once"], { env, encoding: "utf8" }).status, 0);
 });
 
-test("install.sh replaces an old install and its symlink", () => {
+test("install.sh replaces an old install and its symlink", { skip }, () => {
   const out = temp("out");
   assert.equal(build(out).status, 0);
   const pkg = extract(out);
