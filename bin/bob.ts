@@ -95,6 +95,13 @@ else if (command === "prune") {
     writeError: (text) => process.stderr.write(text),
   });
 }
+else if (command === "statusline") {
+  const { readSessionId, statusline } = await import("../src/statusline.ts");
+  const self = await readSessionId(process.stdin, 150);
+
+  process.stdout.write(statusline(stateDir(), Math.floor(Date.now() / 1000), self));
+  process.exit(0);
+}
 else if (command === "new") {
   const { newTicket } = await import("../src/ticket.ts");
   const { realCapture, realRun } = await import("../src/mux.ts");
