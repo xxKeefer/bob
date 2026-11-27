@@ -243,7 +243,7 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: 
       age(now - row.since).padStart(AGE_COLUMN_WIDTH),
       (cell?.text ?? "").padEnd(CONTEXT_COLUMN_WIDTH),
       ...(modelWidth === 0 ? [] : [shortModel(row.context?.model ?? "").padEnd(modelWidth)]),
-      clean(basename(row.cwd)).slice(0, projectWidth).padEnd(projectWidth),
+      `${row.review ? "review " : ""}${clean(basename(row.cwd))}`.slice(0, projectWidth).padEnd(projectWidth),
       ...(prWidth === 0 ? [] : [(pr === undefined ? "" : prCell(pr)).padEnd(prWidth)]),
       clean(row.reason),
     ]);
@@ -288,6 +288,7 @@ export async function main(options: MainOptions): Promise<void> {
   let now = options.now();
   let message = "";
   let prompt: string | undefined;
+  let reviewing = false;
   let confirming: Row | undefined;
   let prCache: PrCache | undefined;
   let prs = new Map<string, PrInfo>();
@@ -300,7 +301,7 @@ export async function main(options: MainOptions): Promise<void> {
 
     if (message !== "") lines.push(clean(message).slice(0, options.width));
 
-    if (prompt !== undefined) lines.push(`ticket: ${clean(prompt)}`.slice(0, options.width));
+    if (prompt !== undefined) lines.push(`${reviewing ? "review PR" : "ticket"}: ${clean(prompt)}`.slice(0, options.width));
 
     if (confirming !== undefined) lines.push(`remove ${clean(basename(confirming.cwd))} and close its window? y/N`.slice(0, options.width));
 
@@ -315,6 +316,27 @@ export async function main(options: MainOptions): Promise<void> {
 
     void import("./ticket.ts").then(({ newTicket }) => {
       const result = newTicket(key, options.env ?? process.env, homedir(), options.run ?? realRun, options.capture ?? realCapture);
+
+      message = result.ok ? "" : result.message;
+      render();
+    });
+  };
+
+  const startReview = (number: string) => {
+    message = `starting review of ${clean(number)}...`;
+    render();
+
+    void Promise.all([import("./review.ts"), import("./reviews.ts")]).then(([{ newReview }, { markReview }]) => {
+      const result = newReview(
+        number,
+        options.env ?? process.env,
+        homedir(),
+        options.run ?? realRun,
+        options.capture ?? realCapture,
+        (path) => {
+          if (options.stateDir !== undefined) markReview(options.stateDir, path);
+        },
+      );
 
       message = result.ok ? "" : result.message;
       render();
@@ -366,7 +388,10 @@ export async function main(options: MainOptions): Promise<void> {
           const key = prompt;
 
           prompt = undefined;
-          start(key);
+
+          if (reviewing) startReview(key);
+          else start(key);
+
           break;
         }
 
@@ -395,8 +420,16 @@ export async function main(options: MainOptions): Promise<void> {
         continue;
       }
 
+      if (key === KEY.review) {
+        prompt = "";
+        reviewing = true;
+        message = "";
+        continue;
+      }
+
       if (key === KEY.ticket) {
         prompt = "";
+        reviewing = false;
         message = "";
         continue;
       }

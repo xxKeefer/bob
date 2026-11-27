@@ -5,7 +5,9 @@ export const DEFAULT_START_PROMPT = "/engineering:work-on <KEY>";
 
 const isText = (value: string | undefined): value is string => String(value) === value;
 
-export type ConfigResult = { ok: true; repo: string; startPrompt: string } | { ok: false; message: string };
+export const DEFAULT_REVIEW_PROMPT = "/engineering:review-pr <N>";
+
+export type ConfigResult = { ok: true; repo: string; startPrompt: string; reviewPrompt: string } | { ok: false; message: string };
 
 function configDir(env: Record<string, string | undefined>, home: string): string {
   const override = env.BOB_CONFIG_DIR;
@@ -31,7 +33,7 @@ export function loadConfig(env: Record<string, string | undefined>, home: string
     return { ok: false, message: "config must be a json object" };
   }
 
-  const { repo, startPrompt = DEFAULT_START_PROMPT } = parsed;
+  const { repo, startPrompt = DEFAULT_START_PROMPT, reviewPrompt = DEFAULT_REVIEW_PROMPT } = parsed;
 
   if (!isText(repo) || !isAbsolute(repo)) return { ok: false, message: "config repo must be an absolute path" };
 
@@ -39,5 +41,9 @@ export function loadConfig(env: Record<string, string | undefined>, home: string
     return { ok: false, message: "config startPrompt must be a non-empty string that does not start with a dash" };
   }
 
-  return { ok: true, repo, startPrompt };
+  if (!isText(reviewPrompt) || reviewPrompt === "" || reviewPrompt.startsWith("-")) {
+    return { ok: false, message: "config reviewPrompt must be a non-empty string that does not start with a dash" };
+  }
+
+  return { ok: true, repo, startPrompt, reviewPrompt };
 }

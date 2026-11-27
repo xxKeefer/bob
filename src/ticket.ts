@@ -18,6 +18,34 @@ function worktreePath(stdout: string, key: string): string | undefined {
   }
 }
 
+export type Launched = { ok: true; path: string } | { ok: false; message: string };
+
+export function launch(
+  config: { repo: string },
+  switchArgs: string[],
+  branch: string,
+  prompt: string,
+  env: Record<string, string | undefined>,
+  run: Run,
+  capture: Capture,
+): Launched {
+  const switched = capture(["wt", "switch", ...switchArgs, branch], config.repo);
+
+  if (!switched.ok) return switched;
+
+  const listed = capture(["wt", "list", "--format=json"], config.repo);
+
+  if (!listed.ok) return listed;
+
+  const path = worktreePath(listed.stdout, branch);
+
+  if (path === undefined) return { ok: false, message: `no worktree found for ${branch}` };
+
+  const opened = openWindow(env, path, prompt, run);
+
+  return opened.ok ? { ok: true, path } : opened;
+}
+
 export function newTicket(
   key: string,
   env: Record<string, string | undefined>,
@@ -31,17 +59,7 @@ export function newTicket(
 
   if (!config.ok) return config;
 
-  const created = capture(["wt", "switch", "--create", key], config.repo);
+  const launched = launch(config, ["--create"], key, config.startPrompt.replaceAll("<KEY>", key), env, run, capture);
 
-  if (!created.ok) return created;
-
-  const listed = capture(["wt", "list", "--format=json"], config.repo);
-
-  if (!listed.ok) return listed;
-
-  const path = worktreePath(listed.stdout, key);
-
-  if (path === undefined) return { ok: false, message: `no worktree found for ${key}` };
-
-  return openWindow(env, path, config.startPrompt.replaceAll("<KEY>", key), run);
+  return launched.ok ? { ok: true } : launched;
 }

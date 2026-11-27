@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
+import { readReviews } from "./reviews.ts";
 import { toMultiplexer } from "./multiplexer.ts";
 import type { Multiplexer } from "./multiplexer.ts";
 import { readUsage } from "./transcript.ts";
@@ -20,6 +21,7 @@ export interface Row {
   multiplexer: Multiplexer;
   muxSession: string;
   paneId: string;
+  review: boolean;
 }
 
 const RANK = new Map([
@@ -54,6 +56,8 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
         .prepare(`select session_id, cwd, status, since, updated, reason, ${optionals} from sessions`)
         .all();
 
+      const reviews = readReviews(stateDir);
+
       return found
         .map((row) => {
           const updated = Number(row.updated);
@@ -70,9 +74,10 @@ export function loadRows(stateDir: string, now: number, onError?: (error: Error)
             multiplexer: toMultiplexer(String(row.multiplexer)),
             muxSession: String(row.mux_session),
             paneId: String(row.pane_id),
+            review: reviews.has(String(row.cwd)),
           };
         })
-        .sort((a, b) => rank(a.status) - rank(b.status) || a.since - b.since);
+        .sort((a, b) => rank(a.status) - rank(b.status) || Number(a.review) - Number(b.review) || a.since - b.since);
     } finally {
       db.close();
     }
