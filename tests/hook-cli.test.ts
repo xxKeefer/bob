@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -216,4 +216,33 @@ test("a tmux that fails with output stores an empty name and the pane and exits 
   const row = muxRow(dir);
   assert.equal(row?.mux_session, "");
   assert.equal(row?.pane_id, "%2");
+});
+
+function loadedModules(dir: string, args: string[]): string[] {
+  const preload = join(dir, "trace.mjs");
+  const log = join(dir, "loaded.txt");
+  writeFileSync(
+    preload,
+    'import { registerHooks } from "node:module";\nimport { appendFileSync } from "node:fs";\n' +
+      "registerHooks({ resolve(specifier, context, next) {\n" +
+      "  const result = next(specifier, context);\n" +
+      "  appendFileSync(" + JSON.stringify(log) + ", result.url + \"\\n\");\n" +
+      "  return result;\n} });\n",
+  );
+  spawnSync("node", ["--import", preload, bin, ...args], {
+    input: payload("SessionStart", "a"),
+    env: { ...process.env, BOB_STATE_DIR: dir },
+    encoding: "utf8",
+  });
+
+  return readFileSync(log, "utf8").split("\n");
+}
+
+test("the hook path loads hook.ts but not the viewer, installer, or demo", () => {
+  const loaded = loadedModules(tempDir(), ["hook"]);
+  assert.ok(loaded.some((url) => url.endsWith("/src/hook.ts")));
+
+  for (const name of ["view", "install", "demo", "keys", "select"]) {
+    assert.ok(!loaded.some((url) => url.endsWith("/src/" + name + ".ts")), name);
+  }
 });
