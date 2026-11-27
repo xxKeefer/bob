@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { closeWindow, focus, open, openWindow, realCapture, realRun } from "../src/mux.ts";
+import { closeWindow, focus, open, openPane, openWindow, realCapture, realRun } from "../src/mux.ts";
 import type { RunResult } from "../src/mux.ts";
 
 function recorder(result: RunResult = { ok: true }) {
@@ -233,4 +233,24 @@ test("a thrown runner does not escape closeWindow", () => {
   });
 
   assert.deepEqual(result, { ok: false, message: "spawn tmux ENOENT" });
+});
+
+test("openPane runs the argv in a detached tmux window in the folder", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(openPane({ TMUX: "x" }, "/w/a", ["env", "PORT=4100", "npm", "run", "dev"], run), { ok: true });
+  assert.deepEqual(calls, [["tmux", "new-window", "-d", "-c", "/w/a", "env", "PORT=4100", "npm", "run", "dev"]]);
+});
+
+test("openPane runs the argv in a zellij pane in the folder", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(openPane({ ZELLIJ: "0" }, "/w/a", ["npm", "run", "dev"], run), { ok: true });
+  assert.deepEqual(calls, [["zellij", "action", "new-pane", "--cwd", "/w/a", "--", "npm", "run", "dev"]]);
+});
+
+test("openPane refuses a relative folder, an empty argv, and no multiplexer", () => {
+  const { calls, run } = recorder();
+  assert.equal(openPane({ TMUX: "x" }, "a", ["npm"], run).ok, false);
+  assert.equal(openPane({ TMUX: "x" }, "/w/a", [], run).ok, false);
+  assert.equal(openPane({}, "/w/a", ["npm"], run).ok, false);
+  assert.deepEqual(calls, []);
 });

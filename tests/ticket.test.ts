@@ -82,3 +82,17 @@ test("unparseable list output opens no window", () => {
   assert.equal(newTicket("ABC-12", s.env, "/h", s.run, capture).ok, false);
   assert.deepEqual(s.ran, []);
 });
+
+test("the after hook gets the worktree path once the window opens", () => {
+  const s = setup();
+  const seen: string[] = [];
+  assert.deepEqual(newTicket("ABC-12", s.env, "/h", s.run, s.capture, (path) => seen.push(path)), { ok: true });
+  assert.deepEqual(seen, ["/r/app.ABC-12"]);
+});
+
+test("the after hook does not run when the launch fails", () => {
+  const s = setup();
+  const seen: string[] = [];
+  newTicket("ABC-12", s.env, "/h", s.run, () => ({ ok: false, message: "no" }), (path) => seen.push(path));
+  assert.deepEqual(seen, []);
+});

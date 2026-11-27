@@ -7,7 +7,7 @@ import { attachKeys, KEY } from "./keys.ts";
 import type { Key } from "./keys.ts";
 import type { KeyInput } from "./keys.ts";
 import { focus, open, realCapture, realRun } from "./mux.ts";
-import type { Capture, Run } from "./mux.ts";
+import type { Capture, Run, RunResult } from "./mux.ts";
 import type { PlanCache, PlanProgress } from "./plan.ts";
 import type { Exec, PrCache, PrInfo } from "./pr.ts";
 import { DEFAULT_STUCK_SECONDS, loadRows } from "./rows.ts";
@@ -316,8 +316,28 @@ export async function main(options: MainOptions): Promise<void> {
   let plans = new Map<string, PlanProgress>();
   let planCache: PlanCache | undefined;
   let stuckSeconds = DEFAULT_STUCK_SECONDS;
+  let writeSelected: ((folder: string) => void) | undefined;
+  let lastSelected: string | undefined;
+
+  const syncSelected = () => {
+    if (writeSelected === undefined || !readsKeys) return;
+
+    const folder = rows.find((row) => row.sessionId === selection.id)?.cwd ?? "";
+
+    if (folder === lastSelected) return;
+
+    lastSelected = folder;
+
+    try {
+      writeSelected(folder);
+    } catch {
+      void 0;
+    }
+  };
 
   const render = () => {
+    syncSelected();
+
     const lines =
       failure === undefined
         ? draw(rows, now, options.width, options.color, readsKeys && rows.length > 0 ? selection.index : undefined, prs, plans)
@@ -338,10 +358,24 @@ export async function main(options: MainOptions): Promise<void> {
     message = `starting ${clean(key)}...`;
     render();
 
-    void import("./ticket.ts").then(({ newTicket }) => {
-      const result = newTicket(key, options.env ?? process.env, homedir(), options.run ?? realRun, options.capture ?? realCapture);
+    void Promise.all([import("./ticket.ts"), import("./dev.ts")]).then(async ([{ newTicket }, { devStarter }]) => {
+      const env = options.env ?? process.env;
+      const run = options.run ?? realRun;
+      const startDev = devStarter({ env, home: homedir(), stateDir: options.stateDir, run });
+      let dev: Promise<RunResult> | undefined;
 
-      message = result.ok ? "" : result.message;
+      const result = newTicket(
+        key,
+        env,
+        homedir(),
+        run,
+        options.capture ?? realCapture,
+        startDev === undefined ? undefined : (path) => void (dev = startDev(path)),
+      );
+
+      const devResult = dev === undefined ? result : await dev;
+
+      message = result.ok ? (devResult.ok ? "" : devResult.message) : result.message;
       render();
     });
   };
@@ -523,7 +557,16 @@ export async function main(options: MainOptions): Promise<void> {
   const detach = readsKeys ? attachKeys(input, onKeys, capturePrompt) : undefined;
 
   try {
-    const loaded = Promise.all([import("./config.ts"), import("./plan.ts")]).then(([{ loadStuckSeconds, loadPlanDir }, { createPlanCache }]) => {
+    const loaded = Promise.all([import("./config.ts"), import("./plan.ts")]).then(([{ loadStuckSeconds, loadPlanDir, loadDev }, { createPlanCache }]) => {
+      const stateDir = options.stateDir;
+
+      if (!options.once && stateDir !== undefined && loadDev(options.env ?? process.env, homedir()) !== undefined) {
+        void import("./dev.ts").then((dev) => {
+          writeSelected = (folder) => dev.writeSelected(stateDir, folder);
+          syncSelected();
+        });
+      }
+
       stuckSeconds = loadStuckSeconds(options.env ?? process.env, homedir());
       planCache = createPlanCache(loadPlanDir(options.env ?? process.env, homedir()));
     });

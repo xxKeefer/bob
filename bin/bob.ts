@@ -104,13 +104,51 @@ else if (command === "statusline") {
 }
 else if (command === "new") {
   const { newTicket } = await import("../src/ticket.ts");
+  const { devStarter } = await import("../src/dev.ts");
   const { realCapture, realRun } = await import("../src/mux.ts");
-  const result = newTicket(process.argv[3] ?? "", process.env, homedir(), realRun, realCapture);
+  const startDev = devStarter({ env: process.env, home: homedir(), stateDir: stateDir(), run: realRun });
+  let dev: Promise<{ ok: boolean; message?: string }> | undefined;
+
+  const result = newTicket(
+    process.argv[3] ?? "",
+    process.env,
+    homedir(),
+    realRun,
+    realCapture,
+    startDev === undefined ? undefined : (path) => void (dev = startDev(path)),
+  );
+
+  const devResult = dev === undefined ? undefined : await dev;
 
   if (result.ok) process.stdout.write(`started ${process.argv[3]}\n`);
   else {
     process.stderr.write(`${result.message}\n`);
     process.exitCode = 1;
+  }
+
+  if (devResult !== undefined && !devResult.ok) {
+    process.stderr.write(`${devResult.message}\n`);
+    process.exitCode = 1;
+  }
+}
+else if (command === "proxy") {
+  const { loadDev } = await import("../src/config.ts");
+  const dev = loadDev(process.env, homedir());
+  const dir = stateDir();
+
+  if (dev === undefined || dir === undefined) {
+    process.stderr.write("proxy needs devCommand in the config and an absolute state folder\n");
+    process.exitCode = 1;
+  } else {
+    const { listen } = await import("../src/proxy.ts");
+
+    try {
+      await listen(dir, dev.proxyPort);
+      process.stdout.write(`proxy on http://127.0.0.1:${dev.proxyPort}\n`);
+    } catch (error) {
+      process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+      process.exitCode = 1;
+    }
   }
 }
 else if (command === "demo" || command === "-d") {

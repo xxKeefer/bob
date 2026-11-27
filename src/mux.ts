@@ -119,6 +119,24 @@ export function openWindow(env: Record<string, string | undefined>, cwd: string,
   }
 }
 
+export function openPane(env: Record<string, string | undefined>, cwd: string, command: string[], run: Run): RunResult {
+  if (!isAbsolute(cwd)) return { ok: false, message: "no folder for this row" };
+
+  if (command.length === 0) return { ok: false, message: "no command to run" };
+
+  let argv: string[];
+
+  if (env.ZELLIJ !== undefined) argv = ["zellij", "action", "new-pane", "--cwd", cwd, "--", ...command];
+  else if (env.TMUX !== undefined) argv = ["tmux", "new-window", "-d", "-c", cwd, ...command];
+  else return { ok: false, message: "launch needs tmux or zellij" };
+
+  try {
+    return run(argv);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function closeWindow(multiplexer: Multiplexer, session: string, pane: string, run: Run): RunResult {
   if (pane === "") return { ok: false, message: "no pane for this session" };
 

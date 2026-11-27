@@ -44,6 +44,7 @@ To update, run `git pull` in the clone.
 | `x` | Clean up the selected row after its PR merged. Bob asks y/N in the view. On `y` it re-checks with `gh pr view` that the PR is merged, runs `wt remove <branch>` in your configured repo, closes the row's tmux window (`kill-window`) or zellij pane (`close-pane`), and deletes the row. If the PR is not merged, or Bob cannot prove it, Bob shows a message and does nothing. Any key but `y` cancels. |
 | `r` | Restart a stuck row. In tmux, Bob runs `tmux respawn-pane -k -t <pane> -c <folder> claude --continue`, which kills the pane process and resumes the same conversation in the same pane. On a row that is not stuck, Bob shows a message and does nothing. zellij has no clean equivalent of `respawn-pane`, so in zellij Bob shows `restart not supported in zellij`. |
 | `bob new <KEY>` | Do the same as `N` outside the view. |
+| `bob proxy` | Run the dev proxy. It listens on `127.0.0.1:8181` (`proxyPort`) and forwards each request, and each websocket upgrade, to the dev server of the row selected in the view. It answers 503 when no row is selected or the row has no recorded port, and 502 when the dev server does not answer. It needs `devCommand` in the config. |
 | `bob --once` | Print one frame and exit. It reads no key. |
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
 | `bob install` | Print the hook entries Bob needs. |
@@ -71,6 +72,20 @@ Claude sends the session JSON on stdin. Bob reads the `session_id` and leaves th
 ```
 
 `repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. `reviewPrompt` is optional; `<N>` becomes the PR number. `stuckSeconds` is optional, a positive number, default 300; see stuck below. `planDir` is optional and absolute, default `~/studio/work/.ai/reports`; `BOB_PLAN_DIR` overrides it. Bob marks a review row by saving the worktree folder in `reviews.json` in the state folder. Bob finds the ticket on a row through the worktree folder name.
+
+## Dev server and stable URL
+
+Off unless the config has `devCommand`. Add these keys to `config.json`:
+
+```json
+{ "devCommand": ["npm", "run", "dev"], "devEnvFile": ".env.local", "devPortRange": [4100, 4199], "proxyPort": 8181 }
+```
+
+`devCommand` is an argv list, never a shell string. `devEnvFile` is a bare file name, default `.env.local`. `devPortRange` is two ports from 1024 up, default `[4100, 4199]`. `proxyPort` is default 8181. A bad value turns the feature off.
+
+After `N` or `bob new` opens a ticket window, Bob picks a free port in the range, sets the `PORT=` line in `devEnvFile` in the worktree (other lines stay), saves folder to port in `ports.json` in the state folder, and opens a second detached tmux window or zellij pane in the worktree running `env PORT=<n> <devCommand>`. A reused worktree keeps its port when it is still free.
+
+While the view runs, it writes the selected row's folder to `selected` in the state folder on each selection change. Run `bob proxy` in another pane, then load `http://localhost:8181`: it shows the dev server of the selected row, and selecting another row and reloading shows that row's server. The proxy re-reads both files on each request and ignores any folder that is not absolute.
 
 ## Bob in a layout pane
 
@@ -109,6 +124,7 @@ Colour shows only on a terminal. Set `NO_COLOR` to turn it off.
 - Set `BOB_STATE_DIR` to an absolute path to use another folder.
 - The hook exits 0 on any error, so it never blocks Claude.
 - The hook deletes a row on `SessionEnd`. A session that dies with no `SessionEnd` leaves a row that goes stale and sorts last.
+- With `devCommand` set, Bob also writes `ports.json` and `selected` in the state folder, and one `PORT=` line in the worktree env file.
 - `bob prune` and the `x` key are the writes that delete rows on your say-so. `x` also removes a worktree and closes a window, and only for a merged PR. Plain `bob`, `bob --once`, and `bob demo` write nothing.
 
 ## Develop
