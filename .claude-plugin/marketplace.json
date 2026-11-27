@@ -1,0 +1,14 @@
+{
+  "name": "bob",
+  "owner": {
+    "name": "xxKeefer"
+  },
+  "plugins": [
+    {
+      "name": "bob",
+      "source": "./plugin",
+      "description": "Declares the hooks that feed Bob, the Claude session dashboard. Needs the bob command on PATH.",
+      "version": "0.0.0"
+    }
+  ]
+}
