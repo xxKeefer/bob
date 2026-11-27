@@ -1,4 +1,4 @@
-export const KEY = { up: "up", down: "down", quit: "quit", enter: "enter", new: "new" } as const;
+export const KEY = { up: "up", down: "down", quit: "quit", enter: "enter", new: "new", ticket: "ticket" } as const;
 
 export type Key = (typeof KEY)[keyof typeof KEY];
 
@@ -20,6 +20,7 @@ const SEQUENCES: readonly { sequence: string; key: Key }[] = [
   { sequence: "\r", key: KEY.enter },
   { sequence: "\n", key: KEY.enter },
   { sequence: "n", key: KEY.new },
+  { sequence: "N", key: KEY.ticket },
   { sequence: "q", key: KEY.quit },
   { sequence: "\x03", key: KEY.quit },
 ];
@@ -41,8 +42,16 @@ export function parseKeys(chunk: string): Key[] {
   return keys;
 }
 
-export function attachKeys(input: KeyInput, onKeys: (keys: Key[]) => void): () => void {
-  const onData = (chunk: Buffer | string) => onKeys(parseKeys(String(chunk)));
+export function attachKeys(
+  input: KeyInput,
+  onKeys: (keys: Key[]) => void,
+  capture: (text: string) => boolean = () => false,
+): () => void {
+  const onData = (chunk: Buffer | string) => {
+    const text = String(chunk);
+
+    if (!capture(text)) onKeys(parseKeys(text));
+  };
 
   input.setRawMode?.(true);
   input.resume();

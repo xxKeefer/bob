@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { focus, open, realRun } from "../src/mux.ts";
+import { focus, open, openWindow, realCapture, realRun } from "../src/mux.ts";
 import type { RunResult } from "../src/mux.ts";
 
 function recorder(result: RunResult = { ok: true }) {
@@ -177,4 +177,30 @@ test("open gives the failure reason, and a thrown runner does not escape", () =>
   });
 
   assert.deepEqual(result, { ok: false, message: "spawn tmux ENOENT" });
+});
+
+test("tmux openWindow makes a window in the folder running claude with the prompt as one argument", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(openWindow({ TMUX: "x" }, "/w/a", "/go A-1", run), { ok: true });
+  assert.deepEqual(calls, [["tmux", "new-window", "-c", "/w/a", "claude", "/go A-1"]]);
+});
+
+test("zellij openWindow makes a pane in the folder running claude with the prompt", () => {
+  const { calls, run } = recorder();
+  assert.deepEqual(openWindow({ ZELLIJ: "0" }, "/w/a", "/go A-1", run), { ok: true });
+  assert.deepEqual(calls, [["zellij", "action", "new-pane", "--cwd", "/w/a", "--", "claude", "/go A-1"]]);
+});
+
+test("openWindow refuses a bad folder, a dashed prompt, and no multiplexer", () => {
+  const { calls, run } = recorder();
+  assert.equal(openWindow({ TMUX: "x" }, "rel", "/go", run).ok, false);
+  assert.equal(openWindow({ TMUX: "x" }, "/w/a", "-x", run).ok, false);
+  assert.equal(openWindow({}, "/w/a", "/go", run).ok, false);
+  assert.deepEqual(calls, []);
+});
+
+test("realCapture gives stdout, and a reason on failure", () => {
+  assert.deepEqual(realCapture(["node", "-e", "process.stdout.write('hi')"], process.cwd()), { ok: true, stdout: "hi" });
+  assert.deepEqual(realCapture(["bob-no-such-binary"], process.cwd()), { ok: false, message: "bob-no-such-binary not found" });
+  assert.deepEqual(realCapture(["node", "-e", "console.error('x');process.exit(2)"], process.cwd()), { ok: false, message: "x" });
 });

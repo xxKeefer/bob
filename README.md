@@ -39,12 +39,24 @@ To update, run `git pull` in the clone.
 | --- | --- |
 | `bob` | Show the live list. It refreshes each second. Move the highlighted row with `j` and `k` or the down and up arrows. Press Enter to focus the selected session's tmux or zellij pane. Press `q` or Ctrl-C to quit. |
 | `n` | Open a new tmux or zellij pane in the selected row's folder and run `claude`. Bob sends it no text. |
+| `N` | Type a ticket key such as `ABC-123` and press Enter. Bob runs `wt switch --create` in your repo, opens a tmux window or zellij pane in the new worktree, and runs `claude` with the start prompt. Esc cancels. |
+| `bob new <KEY>` | Do the same as `N` outside the view. |
 | `bob --once` | Print one frame and exit. It reads no key. |
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
 | `bob install` | Print the hook entries Bob needs. |
 | `bob install --write` | Merge the entries into `~/.claude/settings.json`. |
 | `bob prune` | Delete rows not updated in 7 days. Bob shows the count and asks y/N first. Add `--older-than <age>` (a number and `s`, `m`, `h`, `d`, or `w`, such as `12h`) to change the age. Add `--yes` or `-y` to skip the question. |
 | `bob hook` | The hook that Claude runs. It reads the event on stdin. |
+
+## Config
+
+`~/.config/bob/config.json` (set `BOB_CONFIG_DIR` to move it):
+
+```json
+{ "repo": "/home/me/code/app", "startPrompt": "/engineering:work-on <KEY>" }
+```
+
+`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. Bob finds the ticket on a row through the worktree folder name.
 
 ## Bob in a layout pane
 

@@ -1,0 +1,55 @@
+import assert from "node:assert/strict";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { test } from "node:test";
+import { loadConfig } from "../src/config.ts";
+
+function dirWith(text: string | undefined): string {
+  const dir = mkdtempSync(join(tmpdir(), "bob-config-"));
+
+  if (text !== undefined) writeFileSync(join(dir, "config.json"), text);
+
+  return dir;
+}
+
+test("a config with a repo and a start prompt loads", () => {
+  const dir = dirWith(JSON.stringify({ repo: "/r/app", startPrompt: "/go <KEY>" }));
+  assert.deepEqual(loadConfig({ BOB_CONFIG_DIR: dir }, "/h"), { ok: true, repo: "/r/app", startPrompt: "/go <KEY>" });
+});
+
+test("the start prompt defaults to work-on", () => {
+  const dir = dirWith(JSON.stringify({ repo: "/r/app" }));
+  assert.deepEqual(loadConfig({ BOB_CONFIG_DIR: dir }, "/h"), {
+    ok: true,
+    repo: "/r/app",
+    startPrompt: "/engineering:work-on <KEY>",
+  });
+});
+
+test("the config dir defaults to .config/bob under home", () => {
+  const home = mkdtempSync(join(tmpdir(), "bob-home-"));
+  mkdirSync(join(home, ".config", "bob"), { recursive: true });
+  writeFileSync(join(home, ".config", "bob", "config.json"), JSON.stringify({ repo: "/r/app" }));
+  assert.equal(loadConfig({}, home).ok, true);
+});
+
+for (const [name, text] of [
+  ["a missing file", undefined],
+  ["bad json", "{"],
+  ["a non-object", "[]"],
+  ["a missing repo", "{}"],
+  ["a relative repo", JSON.stringify({ repo: "app" })],
+  ["a non-string prompt", JSON.stringify({ repo: "/r", startPrompt: 4 })],
+  ["a prompt that starts with a dash", JSON.stringify({ repo: "/r", startPrompt: "--x <KEY>" })],
+  ["an empty prompt", JSON.stringify({ repo: "/r", startPrompt: "" })],
+] as const) {
+  test(`${name} gives a message`, () => {
+    const result = loadConfig({ BOB_CONFIG_DIR: dirWith(text) }, "/h");
+    assert.equal(result.ok, false);
+  });
+}
+
+test("a relative BOB_CONFIG_DIR is refused", () => {
+  assert.equal(loadConfig({ BOB_CONFIG_DIR: "rel" }, "/h").ok, false);
+});

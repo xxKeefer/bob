@@ -11,6 +11,11 @@ const TMUX_PANE_ID = /^%\d+$/;
 const ZELLIJ_PANE_ID = /^(terminal_)?\d+$/;
 const ZELLIJ_SESSION = /^[^-\s][^\n]*$/;
 const RUN_TIMEOUT_MS = 2000;
+const CAPTURE_TIMEOUT_MS = 120000;
+
+export type CaptureResult = { ok: true; stdout: string } | { ok: false; message: string };
+
+export type Capture = (argv: string[], cwd: string) => CaptureResult;
 
 export const realRun: Run = (argv) => {
   const [command = "", ...args] = argv;
@@ -23,6 +28,21 @@ export const realRun: Run = (argv) => {
   }
 
   if (result.status === 0) return { ok: true };
+
+  return { ok: false, message: result.stderr.trim().split("\n")[0] || `${command} exited with ${result.status}` };
+};
+
+export const realCapture: Capture = (argv, cwd) => {
+  const [command = "", ...args] = argv;
+  const result = spawnSync(command, args, { encoding: "utf8", timeout: CAPTURE_TIMEOUT_MS, cwd, stdio: ["ignore", "pipe", "pipe"] });
+
+  if (result.error !== undefined) {
+    const code = "code" in result.error ? result.error.code : undefined;
+
+    return { ok: false, message: code === "ENOENT" ? `${command} not found` : result.error.message };
+  }
+
+  if (result.status === 0) return { ok: true, stdout: result.stdout };
 
   return { ok: false, message: result.stderr.trim().split("\n")[0] || `${command} exited with ${result.status}` };
 };
@@ -72,6 +92,24 @@ export function open(env: Record<string, string | undefined>, cwd: string, run: 
 
   if (env.ZELLIJ !== undefined) argv = ["zellij", "action", "new-pane", "--cwd", cwd, "--", "claude"];
   else if (env.TMUX !== undefined) argv = ["tmux", "split-window", "-c", cwd, "claude"];
+  else return { ok: false, message: "launch needs tmux or zellij" };
+
+  try {
+    return run(argv);
+  } catch (error) {
+    return { ok: false, message: error instanceof Error ? error.message : String(error) };
+  }
+}
+
+export function openWindow(env: Record<string, string | undefined>, cwd: string, prompt: string, run: Run): RunResult {
+  if (!isAbsolute(cwd)) return { ok: false, message: "no folder for this row" };
+
+  if (prompt === "" || prompt.startsWith("-")) return { ok: false, message: "start prompt is not valid" };
+
+  let argv: string[];
+
+  if (env.ZELLIJ !== undefined) argv = ["zellij", "action", "new-pane", "--cwd", cwd, "--", "claude", prompt];
+  else if (env.TMUX !== undefined) argv = ["tmux", "new-window", "-c", cwd, "claude", prompt];
   else return { ok: false, message: "launch needs tmux or zellij" };
 
   try {
