@@ -201,9 +201,10 @@ test("the write goes to a temp file in the same folder, then a rename", async ()
   const writes = calls.filter((call) => call.startsWith("write "));
   assert.equal(writes.length, 1);
   assert.notEqual(writes[0], `write ${file}`);
-  assert.ok(writes[0]?.startsWith(`write ${dir}/`));
+  const realDir = realFs.realpathSync(dir);
+  assert.ok(writes[0]?.startsWith(`write ${realDir}/`));
   const [rename] = calls.filter((call) => call.startsWith("rename "));
-  assert.equal(rename, `rename ${writes[0]?.slice(6)} ${file}`);
+  assert.equal(rename, `rename ${writes[0]?.slice(6)} ${realDir}${file.slice(dir.length)}`);
   assert.deepEqual(readdirSync(dir).filter((name) => name.includes("tmp")), []);
 });
 
