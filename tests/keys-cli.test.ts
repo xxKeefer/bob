@@ -159,7 +159,7 @@ function seededPanes(): string {
   return dir;
 }
 
-function jump(dir: string, run: (argv: string[]) => RunResult) {
+function jump(dir: string, run: (argv: string[]) => RunResult, env: Record<string, string> = {}) {
   const input = new FakeInput(true);
   const frames: string[] = [];
 
@@ -173,6 +173,7 @@ function jump(dir: string, run: (argv: string[]) => RunResult) {
     signal: new AbortController().signal,
     input,
     run,
+    env,
   });
 
   return { input, frames, done };
@@ -319,4 +320,66 @@ test("a failed jump message goes when a refresh drops the selected row", async (
   input.emit("data", Buffer.from("q"));
   await done;
   assert.ok(!last.includes("can't find pane"));
+});
+
+function press(keys: string[], dir: string, run: (argv: string[]) => RunResult, env: Record<string, string>) {
+  const { input, frames, done } = jump(dir, run, env);
+
+  for (const key of keys) input.emit("data", Buffer.from(key));
+
+  const last = frames.at(-1)?.split("\n") ?? [];
+  input.emit("data", Buffer.from("q"));
+
+  return done.then(() => last);
+}
+
+test("n in tmux opens a pane in the selected folder", async () => {
+  const calls: string[][] = [];
+  await press(["n"], seededPanes(), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  assert.deepEqual(calls, [["tmux", "split-window", "-c", "/w/a", "claude"]]);
+});
+
+test("n in zellij opens a pane in the selected folder", async () => {
+  const calls: string[][] = [];
+  await press(["j", "n"], seededPanes(), (argv) => (calls.push(argv), { ok: true }), { ZELLIJ: "0" });
+  assert.deepEqual(calls, [["zellij", "action", "new-pane", "--cwd", "/w/b", "--", "claude"]]);
+});
+
+test("n on a row with no folder shows the message and opens no pane", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-nofolder-"));
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "" }), 1000);
+  const calls: string[][] = [];
+  const last = await press(["n"], dir, (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  assert.deepEqual(calls, []);
+  assert.ok(last.some((line) => line.includes("no folder for this row")));
+});
+
+test("n outside a multiplexer shows the message and opens no pane", async () => {
+  const calls: string[][] = [];
+  const last = await press(["n"], seededPanes(), (argv) => (calls.push(argv), { ok: true }), {});
+  assert.deepEqual(calls, []);
+  assert.ok(last.some((line) => line.includes("launch needs tmux or zellij")));
+});
+
+test("n with no rows shows no message and opens no pane", async () => {
+  const calls: string[][] = [];
+  const last = await press(["n"], mkdtempSync(join(tmpdir(), "bob-empty-")), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  assert.deepEqual(calls, []);
+  assert.ok(last.every((line) => !line.includes("launch") && !line.includes("folder")));
+});
+
+test("a failed launch shows the error and Bob keeps refreshing", async () => {
+  const { input, frames, done } = jump(seededPanes(), () => ({ ok: false, message: "no server running" }), { TMUX: "x" });
+  input.emit("data", Buffer.from("n"));
+  assert.ok(frames.at(-1)?.includes("no server running"));
+  const count = frames.length;
+  await sleepMs(60);
+  assert.ok(frames.length > count);
+  input.emit("data", Buffer.from("q"));
+  await done;
+});
+
+test("the launch message clears after the next key", async () => {
+  const last = await press(["n", "j"], seededPanes(), () => ({ ok: true }), {});
+  assert.ok(!last.some((line) => line.includes("launch needs")));
 });

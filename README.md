@@ -38,6 +38,7 @@ To update, run `git pull` in the clone.
 | Command | Does |
 | --- | --- |
 | `bob` | Show the live list. It refreshes each second. Move the highlighted row with `j` and `k` or the down and up arrows. Press Enter to focus the selected session's tmux or zellij pane. Press `q` or Ctrl-C to quit. |
+| `n` | Open a new tmux or zellij pane in the selected row's folder and run `claude`. Bob sends it no text. |
 | `bob --once` | Print one frame and exit. It reads no key. |
 | `bob demo` or `bob -d` | Show fake sessions. It touches no real state. |
 | `bob install` | Print the hook entries Bob needs. |

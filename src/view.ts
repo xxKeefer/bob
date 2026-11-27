@@ -5,7 +5,7 @@ import { EVENTS } from "./hook.ts";
 import { attachKeys, KEY } from "./keys.ts";
 import type { Key } from "./keys.ts";
 import type { KeyInput } from "./keys.ts";
-import { focus, realRun } from "./mux.ts";
+import { focus, open, realRun } from "./mux.ts";
 import type { Run } from "./mux.ts";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
@@ -27,6 +27,7 @@ export interface MainOptions {
   signal: AbortSignal;
   input?: Input;
   run?: Run;
+  env?: Record<string, string | undefined>;
 }
 
 const STATUS_COLUMN_WIDTH = 10;
@@ -256,6 +257,17 @@ export async function main(options: MainOptions): Promise<void> {
         if (row === undefined) continue;
 
         const result = focus(row.multiplexer, row.muxSession, row.paneId, options.run ?? realRun);
+
+        message = result.ok ? "" : result.message;
+        continue;
+      }
+
+      if (key === KEY.new) {
+        const row = rows.find((candidate) => candidate.sessionId === selection.id);
+
+        if (row === undefined) continue;
+
+        const result = open(options.env ?? process.env, row.cwd, options.run ?? realRun);
 
         message = result.ok ? "" : result.message;
         continue;
