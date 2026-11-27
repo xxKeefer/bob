@@ -242,7 +242,7 @@ test("the hook path loads hook.ts but not the viewer, installer, or demo", () =>
   const loaded = loadedModules(tempDir(), ["hook"]);
   assert.ok(loaded.some((url) => url.endsWith("/src/hook.ts")));
 
-  for (const name of ["view", "install", "demo", "keys", "select"]) {
+  for (const name of ["view", "install", "demo", "keys", "select", "prune"]) {
     assert.ok(!loaded.some((url) => url.endsWith("/src/" + name + ".ts")), name);
   }
 });
