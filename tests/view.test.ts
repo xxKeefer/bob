@@ -491,3 +491,10 @@ test("draw marks a review row in the folder column", () => {
   assert.match(text, /review pr/);
   assert.doesNotMatch(text, /review ticket/);
 });
+
+test("draw shows a stuck row with its own icon and red status", () => {
+  const [, plain] = draw([row({ status: "stuck" })], 190, 120);
+  assert.match(plain ?? "", /^■ stuck/);
+  const [, colored] = draw([row({ status: "stuck" })], 190, 120, true);
+  assert.ok(colored?.startsWith(`${ESC}[31m■ stuck`));
+});

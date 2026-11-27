@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { EventEmitter } from "node:events";
-import { mkdtempSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -570,4 +570,65 @@ test("a bad PR number shows the message and runs nothing", async () => {
   await done;
   assert.deepEqual(calls, []);
   assert.ok(last.includes("PR number"));
+});
+
+function stuckDir(env: Record<string, string>, mtime: number): string {
+  const dir = mkdtempSync(join(tmpdir(), "bob-stuck-"));
+  const file = join(dir, "t.jsonl");
+  writeFileSync(file, "{}\n");
+  utimesSync(file, mtime, mtime);
+  const payload = { hook_event_name: "UserPromptSubmit", session_id: "a", cwd: "/w/a", transcript_path: file };
+  handle(dir, JSON.stringify(payload), 900, env, () => "s1");
+
+  return dir;
+}
+
+async function pressSettled(keys: string[], dir: string, run: (argv: string[]) => RunResult, env: Record<string, string>) {
+  const { input, frames, done } = jump(dir, run, env);
+
+  for (const key of keys) input.emit("data", Buffer.from(key));
+
+  await sleepMs(60);
+  const last = frames.at(-1)?.split("\n") ?? [];
+  input.emit("data", Buffer.from("q"));
+  await done;
+
+  return last;
+}
+
+test("r on a stuck tmux row respawns the pane with claude --continue", async () => {
+  const calls: string[][] = [];
+  const last = await pressSettled(["r"], stuckDir({ TMUX_PANE: "%7" }, 100), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  assert.ok(last.join("\n").includes("stuck"));
+  assert.deepEqual(calls, [["tmux", "respawn-pane", "-k", "-t", "%7", "-c", "/w/a", "claude", "--continue"]]);
+});
+
+test("r on a row that is not stuck shows a message and runs nothing", async () => {
+  const calls: string[][] = [];
+  const last = await pressSettled(["r"], stuckDir({ TMUX_PANE: "%7" }, 900), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x" });
+  assert.deepEqual(calls, []);
+  assert.ok(last.join("\n").includes("not stuck"));
+});
+
+test("r on a stuck zellij row shows the not supported message and runs nothing", async () => {
+  const calls: string[][] = [];
+  const env = { ZELLIJ_PANE_ID: "4", ZELLIJ_SESSION_NAME: "zs" };
+  const last = await pressSettled(["r"], stuckDir(env, 100), (argv) => (calls.push(argv), { ok: true }), { ZELLIJ: "0" });
+  assert.deepEqual(calls, []);
+  assert.ok(last.join("\n").includes("not supported in zellij"));
+});
+
+test("the configured stuckSeconds decides when a busy row is stuck", async () => {
+  const cfg = mkdtempSync(join(tmpdir(), "bob-cfg-"));
+  writeFileSync(join(cfg, "config.json"), JSON.stringify({ stuckSeconds: 5000 }));
+  const calls: string[][] = [];
+  const { input, frames, done } = jump(stuckDir({ TMUX_PANE: "%7" }, 100), (argv) => (calls.push(argv), { ok: true }), { TMUX: "x", BOB_CONFIG_DIR: cfg });
+  await sleepMs(60);
+  input.emit("data", Buffer.from("r"));
+  await sleepMs(30);
+  const last = frames.at(-1)?.split("\n") ?? [];
+  input.emit("data", Buffer.from("q"));
+  await done;
+  assert.deepEqual(calls, []);
+  assert.ok(last.join("\n").includes("not stuck"));
 });

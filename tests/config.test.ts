@@ -67,3 +67,13 @@ for (const [name, text] of [
 test("a relative BOB_CONFIG_DIR is refused", () => {
   assert.equal(loadConfig({ BOB_CONFIG_DIR: "rel" }, "/h").ok, false);
 });
+
+test("loadStuckSeconds defaults to 300 and reads a positive stuckSeconds", async () => {
+  const { loadStuckSeconds } = await import("../src/config.ts");
+  assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(undefined) }, "/h"), 300);
+  assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith("{bad") }, "/h"), 300);
+  assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ repo: "/r" })) }, "/h"), 300);
+  assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ stuckSeconds: 90 })) }, "/h"), 90);
+  assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ stuckSeconds: -1 })) }, "/h"), 300);
+  assert.equal(loadStuckSeconds({ BOB_CONFIG_DIR: dirWith(JSON.stringify({ stuckSeconds: "9" })) }, "/h"), 300);
+});

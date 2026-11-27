@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { isAbsolute, join } from "node:path";
 
+export const DEFAULT_STUCK_SECONDS = 300;
 export const DEFAULT_START_PROMPT = "/engineering:work-on <KEY>";
 
 const isText = (value: string | undefined): value is string => String(value) === value;
@@ -13,6 +14,17 @@ function configDir(env: Record<string, string | undefined>, home: string): strin
   const override = env.BOB_CONFIG_DIR;
 
   return override === undefined || override === "" ? join(home, ".config", "bob") : override;
+}
+
+export function loadStuckSeconds(env: Record<string, string | undefined>, home: string): number {
+  try {
+    const parsed = JSON.parse(readFileSync(join(configDir(env, home), "config.json"), "utf8"));
+    const value = Number(parsed?.stuckSeconds);
+
+    return Number.isFinite(value) && value > 0 && parsed.stuckSeconds === value ? value : DEFAULT_STUCK_SECONDS;
+  } catch {
+    return DEFAULT_STUCK_SECONDS;
+  }
 }
 
 export function loadConfig(env: Record<string, string | undefined>, home: string): ConfigResult {
