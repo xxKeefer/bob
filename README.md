@@ -46,6 +46,17 @@ To update, run `git pull` in the clone.
 | `bob prune` | Delete rows not updated in 7 days. Bob shows the count and asks y/N first. Add `--older-than <age>` (a number and `s`, `m`, `h`, `d`, or `w`, such as `12h`) to change the age. Add `--yes` or `-y` to skip the question. |
 | `bob hook` | The hook that Claude runs. It reads the event on stdin. |
 
+## Bob in a layout pane
+
+One command opens a multiplexer with Bob in a pane beside a shell. Bob must be on `PATH` (install step 3).
+
+| Multiplexer | Command |
+| --- | --- |
+| zellij | `zellij --layout ~/code/bob/layouts/bob.kdl` |
+| tmux | `tmux new-session bob \; split-window -h` |
+
+Press Enter in Bob to focus a session's pane. Press `n` to open a new Claude pane.
+
 ## How to read the list
 
 Rows sort waiting first (longest wait on top), then busy, then idle, then stale.
