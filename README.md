@@ -150,6 +150,10 @@ npm run lint
 
 CI runs `npm test`, `npm run typecheck`, and `npm run lint` on every PR and every push to `main`.
 
-## Releases
+## Releasing
 
-None yet. The version is `0.0.0`. The next goal is a release page with a binary and an installer, so a machine needs a download and no clone.
+1. Bump `version` in `package.json` and merge it to `main`.
+2. Tag the merge commit: `git tag v<version>`
+3. Push the tag: `git push origin v<version>`
+
+The `Release` workflow runs the checks, fails if the tag and `package.json` differ, builds the tarball, and publishes a release with `bob-<version>.tar.gz` and `install.sh` attached.
