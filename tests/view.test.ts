@@ -379,3 +379,109 @@ test("draw at 80 columns paints the reason of a waiting row from its start", () 
   const [, waiting] = draw(NARROW_ROWS, 190, 80, true);
   assert.ok(waiting?.includes(`${ESC}[33mAllow`));
 });
+
+const PR_ROWS = [
+  row({ status: "waiting", cwd: "/a/my-long-project-name", reason: "Allow Bash to run the migration script?" }),
+  row({ sessionId: "t", status: "busy", cwd: "/a/other" }),
+];
+
+const PRS = new Map([
+  ["/a/my-long-project-name", { state: "open" as const, ci: "fail" as const, review: "changes" as const }],
+]);
+
+test("draw shows the PR state, CI result, and review decision when a row has a PR", () => {
+  const [heading, first, second] = draw(PR_ROWS, 190, 160, false, undefined, PRS);
+  assert.match(heading ?? "", /PR/);
+  assert.match(first ?? "", /open +✗ +chg/);
+  assert.doesNotMatch(second ?? "", /open/);
+});
+
+test("draw has no PR column when no row has a PR", () => {
+  const [heading] = draw(PR_ROWS, 190, 160, false, undefined, new Map());
+  assert.doesNotMatch(heading ?? "", /PR/);
+});
+
+test("draw keeps the heading aligned and the width at every width with a PR column", () => {
+  for (const width of [40, 60, 70, 80, 90, 100, 119, 120, 140, 160]) {
+    for (const color of [false, true]) {
+      const lines = draw(PR_ROWS, 190, width, color, undefined, PRS).map((line) => line.replace(SGR, ""));
+      const [heading, waiting] = lines;
+
+      for (const line of lines) assert.ok(line.length <= width, `fit at ${width}`);
+
+      if (/PR/.test(heading ?? "")) {
+        assert.equal(heading?.indexOf("FOLDER"), waiting?.indexOf("my-"), `folder at ${width}`);
+        assert.equal(heading?.indexOf("REASON"), waiting?.indexOf("Allow"), `reason at ${width}`);
+        assert.equal(heading?.indexOf("PR"), waiting?.indexOf("open"), `pr at ${width}`);
+      }
+    }
+  }
+});
+
+test("draw at 80 columns drops the PR column and keeps the reason", () => {
+  const [, waiting] = draw(PR_ROWS, 190, 80, false, undefined, PRS);
+  assert.match(waiting ?? "", /Allow Bash to run/);
+});
+
+test("draw with color paints a failing CI cell red", () => {
+  const [, first] = draw(PR_ROWS, 190, 160, true, undefined, PRS);
+  assert.ok(first?.includes(`${ESC}[31mopen`));
+});
+
+test("main shows the PR of a row after its refresh and changes it when CI finishes", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-view-"));
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), 100);
+  let ci = "IN_PROGRESS";
+
+  const exec = async (argv: string[]) =>
+    argv[0] === "git"
+      ? { ok: true as const, stdout: "feat/x\n" }
+      : {
+          ok: true as const,
+          stdout: JSON.stringify({ state: "OPEN", isDraft: true, reviewDecision: "APPROVED", statusCheckRollup: [{ status: ci, conclusion: ci === "COMPLETED" ? "SUCCESS" : "" }] }),
+        };
+
+  const frames: string[] = [];
+  const controller = new AbortController();
+  let clock = 200;
+  const guard = setTimeout(() => controller.abort(), 2000);
+
+  await main({
+    stateDir: dir,
+    once: false,
+    intervalMs: 5,
+    width: 160,
+    now: () => clock,
+    write: (text) => {
+      frames.push(text);
+
+      if (frames.length === 3) {
+        ci = "COMPLETED";
+        clock += 100;
+      }
+
+      if (frames.some((frame) => /draft +✓ +appr/.test(frame))) controller.abort();
+    },
+    signal: controller.signal,
+    exec,
+  });
+  clearTimeout(guard);
+
+  assert.ok(frames.some((frame) => /draft +… +appr/.test(frame)));
+  assert.ok(frames.some((frame) => /draft +✓ +appr/.test(frame)));
+});
+
+test("main with once makes no PR call", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "bob-view-"));
+  handle(dir, JSON.stringify({ hook_event_name: "SessionStart", session_id: "a", cwd: "/w/alpha" }), 100);
+  let calls = 0;
+
+  const exec = async () => {
+    calls += 1;
+
+    return { ok: false as const, message: "x" };
+  };
+
+  await main({ stateDir: dir, once: true, intervalMs: 5, width: 80, now: () => 200, write: () => {}, signal: new AbortController().signal, exec });
+  assert.equal(calls, 0);
+});

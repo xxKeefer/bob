@@ -8,6 +8,7 @@ import type { Key } from "./keys.ts";
 import type { KeyInput } from "./keys.ts";
 import { focus, open, realCapture, realRun } from "./mux.ts";
 import type { Capture, Run } from "./mux.ts";
+import type { Exec, PrCache, PrInfo } from "./pr.ts";
 import { loadRows } from "./rows.ts";
 import type { Row } from "./rows.ts";
 import { move, reconcile, START } from "./select.ts";
@@ -29,6 +30,7 @@ export interface MainOptions {
   input?: Input;
   run?: Run;
   capture?: Capture;
+  exec?: Exec;
   env?: Record<string, string | undefined>;
 }
 
@@ -37,6 +39,7 @@ const AGE_COLUMN_WIDTH = 7;
 const BAR_CELLS = 8;
 const CONTEXT_COLUMN_WIDTH = BAR_CELLS + 5;
 const MODEL_COLUMN_WIDTH = 10;
+const PR_COLUMN_WIDTH = 13;
 const PROJECT_COLUMN_WIDTH = 20;
 const COLUMN_GAP = 2;
 const MIN_REASON_WIDTH = 20;
@@ -132,20 +135,51 @@ function shortModel(model: string): string {
 
 interface Layout {
   modelWidth: number;
+  prWidth: number;
   projectWidth: number;
 }
 
-function layout(width: number): Layout {
+const PR_GLYPH = new Map([
+  ["pass", "\u2713"],
+  ["fail", "\u2717"],
+  ["pending", "\u2026"],
+  ["none", "-"],
+]);
+
+const PR_REVIEW = new Map([
+  ["approved", "appr"],
+  ["changes", "chg"],
+  ["required", "rev"],
+]);
+
+const CI_COLOR = new Map([
+  ["pass", "32"],
+  ["fail", "31"],
+  ["pending", "33"],
+]);
+
+function prCell(info: PrInfo): string {
+  return `${info.state.padEnd(6)} ${PR_GLYPH.get(info.ci) ?? "-"} ${PR_REVIEW.get(info.review) ?? ""}`.trimEnd();
+}
+
+function layout(width: number, withPr: boolean): Layout {
   const fixed = STATUS_COLUMN_WIDTH + AGE_COLUMN_WIDTH + CONTEXT_COLUMN_WIDTH + COLUMN_GAP * 4;
-  const wanted = fixed + COLUMN_GAP + PROJECT_COLUMN_WIDTH + MIN_REASON_WIDTH;
+  const prSpan = withPr ? PR_COLUMN_WIDTH + COLUMN_GAP : 0;
+  const wanted = fixed + COLUMN_GAP + PROJECT_COLUMN_WIDTH + MIN_REASON_WIDTH + prSpan;
 
   if (wanted + MODEL_COLUMN_WIDTH + COLUMN_GAP <= width) {
-    return { modelWidth: MODEL_COLUMN_WIDTH, projectWidth: PROJECT_COLUMN_WIDTH };
+    return { modelWidth: MODEL_COLUMN_WIDTH, prWidth: withPr ? PR_COLUMN_WIDTH : 0, projectWidth: PROJECT_COLUMN_WIDTH };
   }
 
-  const room = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH;
+  const room = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH - prSpan;
 
-  return { modelWidth: 0, projectWidth: Math.max(MIN_PROJECT_COLUMN_WIDTH, Math.min(PROJECT_COLUMN_WIDTH, room)) };
+  if (withPr && room >= MIN_PROJECT_COLUMN_WIDTH) {
+    return { modelWidth: 0, prWidth: PR_COLUMN_WIDTH, projectWidth: Math.min(PROJECT_COLUMN_WIDTH, room) };
+  }
+
+  const bare = width - fixed - COLUMN_GAP - MIN_REASON_WIDTH;
+
+  return { modelWidth: 0, prWidth: 0, projectWidth: Math.max(MIN_PROJECT_COLUMN_WIDTH, Math.min(PROJECT_COLUMN_WIDTH, bare)) };
 }
 
 const GUTTER = "  ";
@@ -153,10 +187,17 @@ const MARKER = "> ";
 const REVERSE = "\x1b[7m";
 const RESET = "\x1b[0m";
 
-export function draw(rows: Row[], now: number, width: number, color = false, selected?: number): string[] {
-  if (selected === undefined || rows.length === 0) return drawRows(rows, now, width, color);
+export function draw(
+  rows: Row[],
+  now: number,
+  width: number,
+  color = false,
+  selected?: number,
+  prs: Map<string, PrInfo> = new Map(),
+): string[] {
+  if (selected === undefined || rows.length === 0) return drawRows(rows, now, width, color, prs);
 
-  const [heading = "", ...lines] = drawRows(rows, now, width - GUTTER.length, color);
+  const [heading = "", ...lines] = drawRows(rows, now, width - GUTTER.length, color, prs);
 
   return [
     GUTTER + heading,
@@ -168,16 +209,19 @@ export function draw(rows: Row[], now: number, width: number, color = false, sel
   ];
 }
 
-function drawRows(rows: Row[], now: number, width: number, color: boolean): string[] {
+function drawRows(rows: Row[], now: number, width: number, color: boolean, prs: Map<string, PrInfo>): string[] {
   if (rows.length === 0) return ["no sessions".slice(0, width)];
 
   const join = (parts: string[]) => parts.join(" ".repeat(COLUMN_GAP)).trimEnd().slice(0, width);
   const ageStart = STATUS_COLUMN_WIDTH + COLUMN_GAP;
   const ageEnd = ageStart + AGE_COLUMN_WIDTH;
   const contextStart = ageEnd + COLUMN_GAP;
-  const { modelWidth, projectWidth } = layout(width);
+  const withPr = rows.some((row) => prs.has(row.cwd));
+  const { modelWidth, prWidth, projectWidth } = layout(width, withPr);
   const modelSpan = modelWidth === 0 ? 0 : modelWidth + COLUMN_GAP;
-  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + modelSpan + projectWidth + COLUMN_GAP;
+  const prSpan = prWidth === 0 ? 0 : prWidth + COLUMN_GAP;
+  const reasonStart = contextStart + CONTEXT_COLUMN_WIDTH + COLUMN_GAP + modelSpan + projectWidth + COLUMN_GAP + prSpan;
+  const prStart = reasonStart - prSpan;
 
   const heading = join([
     "STATUS".padEnd(STATUS_COLUMN_WIDTH),
@@ -185,12 +229,14 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean): stri
     "CONTEXT".padEnd(CONTEXT_COLUMN_WIDTH),
     ...(modelWidth === 0 ? [] : ["MODEL".padEnd(modelWidth)]),
     "FOLDER".padEnd(projectWidth),
+    ...(prWidth === 0 ? [] : ["PR".padEnd(prWidth)]),
     "REASON",
   ]);
 
   const lines = rows.map((row) => {
     const cell = row.context === undefined ? undefined : contextCell(row.context.tokens);
     const icon = STATUS_ICON.get(row.status) ?? "-";
+    const pr = prs.get(row.cwd);
 
     const line = join([
       `${icon} ${clean(row.status)}`.padEnd(STATUS_COLUMN_WIDTH),
@@ -198,6 +244,7 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean): stri
       (cell?.text ?? "").padEnd(CONTEXT_COLUMN_WIDTH),
       ...(modelWidth === 0 ? [] : [shortModel(row.context?.model ?? "").padEnd(modelWidth)]),
       clean(basename(row.cwd)).slice(0, projectWidth).padEnd(projectWidth),
+      ...(prWidth === 0 ? [] : [(pr === undefined ? "" : prCell(pr)).padEnd(prWidth)]),
       clean(row.reason),
     ]);
 
@@ -218,6 +265,10 @@ function drawRows(rows: Row[], now: number, width: number, color: boolean): stri
       );
     }
 
+    const ciCode = pr === undefined ? undefined : CI_COLOR.get(pr.ci);
+
+    if (prWidth !== 0 && ciCode !== undefined) spans.push([prStart, prStart + prWidth, ciCode]);
+
     if (row.status === "waiting") spans.push([reasonStart, Infinity, REASON_COLOR]);
 
     return paint(line, spans);
@@ -237,11 +288,13 @@ export async function main(options: MainOptions): Promise<void> {
   let now = options.now();
   let message = "";
   let prompt: string | undefined;
+  let prCache: PrCache | undefined;
+  let prs = new Map<string, PrInfo>();
 
   const render = () => {
     const lines =
       failure === undefined
-        ? draw(rows, now, options.width, options.color, readsKeys && rows.length > 0 ? selection.index : undefined)
+        ? draw(rows, now, options.width, options.color, readsKeys && rows.length > 0 ? selection.index : undefined, prs)
         : drawUnreadable(failure.message, options.width);
 
     if (message !== "") lines.push(clean(message).slice(0, options.width));
@@ -340,12 +393,26 @@ export async function main(options: MainOptions): Promise<void> {
   const detach = readsKeys ? attachKeys(input, onKeys, capturePrompt) : undefined;
 
   try {
+    if (!options.once) {
+      void import("./pr.ts").then(({ createPrCache, realExec }) => {
+        prCache = createPrCache({ exec: options.exec ?? realExec, now: options.now });
+      });
+    }
+
     while (!local.signal.aborted) {
       now = options.now();
       const errors: Error[] = [];
 
       rows = options.stateDir === undefined ? [] : loadRows(options.stateDir, now, (error) => errors.push(error));
       failure = errors[0];
+      prs = new Map();
+
+      for (const row of rows) {
+        const info = prCache?.get(row.cwd);
+
+        if (info !== undefined) prs.set(row.cwd, info);
+      }
+
       const reconciled = reconcile(selection, ids());
 
       if (reconciled.id !== selection.id) message = "";
