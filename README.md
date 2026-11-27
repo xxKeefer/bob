@@ -17,6 +17,14 @@ Bob sends no input to a session. It edits no Claude file unless you run `bob ins
 - Node 26 or later. Bob uses only Node built-ins, so it needs no `npm install` to run.
 - Claude Code with hooks enabled.
 
+## Install from a release
+
+1. Download `bob-<version>.tar.gz` from the release page and unpack it: `tar -xzf bob-<version>.tar.gz`
+2. Run `sh bob-<version>/install.sh`. It checks that `node --version` is 26 or later, copies Bob to `~/.local/share/bob` (`BOB_PREFIX`), and links `bob` into `~/.local/bin` (`BOB_BIN`).
+3. Run `bob install --write` as in step 6 below.
+
+The installer needs Node 26 and refuses to run without it. It does not embed Node, so the goal of running on a machine with no Node is not met, by design: see `docs/decisions/installer.md`. Build the tarball with `sh scripts/build-release.sh`.
+
 ## Install from source
 
 1. Clone the repo: `git clone git@github.com:xxKeefer/bob.git ~/code/bob`
