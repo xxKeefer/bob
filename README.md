@@ -70,7 +70,7 @@ Claude sends the session JSON on stdin. Bob reads the `session_id` and leaves th
 { "repo": "/home/me/code/app", "startPrompt": "/engineering:work-on <KEY>", "reviewPrompt": "/engineering:review-pr <N>" }
 ```
 
-`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. `reviewPrompt` is optional; `<N>` becomes the PR number. `stuckSeconds` is optional, a positive number, default 300; see stuck below. Bob marks a review row by saving the worktree folder in `reviews.json` in the state folder. Bob finds the ticket on a row through the worktree folder name.
+`repo` is required and absolute. `startPrompt` is optional; `<KEY>` becomes the ticket key. `reviewPrompt` is optional; `<N>` becomes the PR number. `stuckSeconds` is optional, a positive number, default 300; see stuck below. `planDir` is optional and absolute, default `~/studio/work/.ai/reports`; `BOB_PLAN_DIR` overrides it. Bob marks a review row by saving the worktree folder in `reviews.json` in the state folder. Bob finds the ticket on a row through the worktree folder name.
 
 ## Bob in a layout pane
 
@@ -96,6 +96,8 @@ Rows sort waiting first (longest wait on top), then stuck, then busy, then idle,
 | `◌` | stale | No update for 3600 seconds. |
 
 The context bar has 8 cells. 300k tokens fills it, and the percentage is tokens divided by 300k. The colour follows the token count: green below 100k, yellow below 200k, amber below 300k, red above. Bob reads the token count and the model from the last entry of the session transcript.
+
+The PLAN column shows done and total steps, such as `3/7`. Bob takes the ticket key from the row's folder name, reads the newest `plan_*.md` in `<planDir>/<KEY>/`, and counts the `- [x] **N. title.**` lines against all step lines under `## Steps`. Bob only reads. It caches by file mtime. A row with no plan shows no cell, and no plan means no column. Below 120 columns the PLAN column goes before the PR column.
 
 The PR column shows the PR state (`draft`, `open`, `merged`, `closed`), the CI result (`✓` pass, `✗` fail, `…` pending, `-` none), and the review decision (`appr`, `chg`, `rev`). Bob finds the branch with `git rev-parse` in the row's folder and polls `gh pr view` from the view process. It needs `gh` signed in. A folder with no PR shows no cell, and no row with a PR means no column. Each folder gets one call at a time, a 30 second TTL, old data while a refresh runs, and a 2 minute back-off after an error. `bob --once` makes no call. Below 110 columns the model column goes, and below 83 the PR column goes.
 
